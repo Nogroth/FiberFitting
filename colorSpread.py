@@ -8,7 +8,6 @@ def drawData(graph, colorCountList, divs, numPixels, col):
         graph.putpixel( (i, 30), (0,0,0))
         x = i
         y = 30 + int(256 * colorCountList[i/divs][col] / float(numPixels))
-#         print( i, int(colorCountList[i/divs][col]), y)
         dataSet.append((x,y))
         if ( i > 0 ):
             draw = ImageDraw.Draw(graph)
@@ -42,6 +41,7 @@ def countColors( pixels, width, height, divs):
             for k in range(0, height):
                 colorCountArray[ (int(pixels[j,k][i] / divs)) ][i] += 1
                 
+    # uncomment this to display a graph of the colors in an image
 #     graphData(colorCountArray, divs, width * height)
     return colorCountArray
  
@@ -54,29 +54,16 @@ def getStats( pixels, width, height ):
         for j in range(0, int(256/divs)):
             avg[i] += colorArray[j][i] * j * divs
         avg[i] /= (width * height)
-#         print("Average: ", avg[i])
-#     avgCol = Image.new("RGB", (100, 100), (avg[0], avg[1], avg[2]))
-#     avgCol.show()
+
     print("average found.")    
     for i in range(0,3):
         for j in range(0, int(256/divs)):
+            # for each subdivision of color, calculate the stdev in the image
             for k in range(0,colorArray[j][i]):
-#                 print(k)
                 stdev[i] += pow(j * divs - avg[i], 2)
         stdev[i] /= (width*height)
         stdev[i] = math.sqrt( stdev[i] )
-#         print(stdev[i])
-        
-#     avgCol = Image.new("RGB", (100, 100), (avg[0], avg[1], avg[2]))
-#     avgCol.show()
-#     stddev1Col = Image.new("RGB", (100, 100), (int(avg[0] + stdev[0]), int(avg[1] + stdev[1]), int(avg[2] + stdev[2])))
-#     stddev1Col.show()
-#     stddev2Col = Image.new("RGB", (100, 100), (int(avg[0] - stdev[0]), int(avg[1] - stdev[1]), int(avg[2] - stdev[2])))
-#     stddev2Col.show()
-#     stddev1Col = Image.new("RGB", (100, 100), (int(avg[0] + 2*stdev[0]), int(avg[1] + 2*stdev[1]), int(avg[2] + 2*stdev[2])))
-#     stddev1Col.show()
-#     stddev2Col = Image.new("RGB", (100, 100), (int(avg[0] - 2*stdev[0]), int(avg[1] - 2*stdev[1]), int(avg[2] - 2*stdev[2])))
-#     stddev2Col.show()
+
     print("stdevs found.")
       
     return(stdev, avg)

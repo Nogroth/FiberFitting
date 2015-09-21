@@ -29,39 +29,22 @@ def getEllipseOutline( x0, y0, alpha, a, b, fine):
         y = y0 + a * cos(theta) * sin(alpha) + b * sin(theta) * cos(alpha)
         if (int(x), int(y)) != outline[len(outline)-1]:
             outline.append( (int(x), int(y)) )
-#             print(outline[len(outline)-1])
     return outline
 
-def fillEllipse( im, x0, y0, alpha, a, b):
-    '''
-    assume points are in order
-    draw a line from each point to the next
-    find an interior point
-    fill the area using magical black box
-    '''
+def fillEllipse( im, x0, y0, alpha, a, b, col):
+#     '''
+#     get points on the outline of the specified ellipse
+#     create polygon using those points
+#     draw/fill polygon
+#     '''
     pnts = getEllipseOutline(x0, y0, alpha, a, b, True)
     draw = ImageDraw.Draw(im)
-    
-    #draw complete outline and find the leftmost and rightmost points
-#     xMin = x0 + 20000
-#     xMax = 0
-    s = len(pnts)
-    for i in range(0, s):
-        draw.line( ( int(pnts[i][0]), int(pnts[i][1]), int(pnts[(i + 1) % s][0]), int(pnts[(i + 1) % s][1]) ), 255, 1)
-    
-    insidePnt = (int(pnts[0][0] + (pnts[int(s/2)][0] - pnts[0][0]) / 2), int(pnts[0][1] + (pnts[int(s/2)][1] - pnts[0][1]) / 2))
-    
-    ImageDraw.floodfill(im, insidePnt, 255, border=None)
-#         if pnts[i][0] < xMin:
-#             xMin = pnts[i][0]
-#         elif pnts[i][0] > xMax:
-#             xMax = pnts[i][0]
-    
-    #fill it in
+    draw.polygon(pnts, fill=col)
     
 
 '''
-this function will find the angle between each pair of points
+this function will approximate the average curvature at each point along a boundary
+by finding the angle formed by that point and its neighbors
 '''
 def getCurvature( points ):
     totalChange = 0
@@ -77,17 +60,17 @@ def getCurvature( points ):
         v2 = (points[(i + 2*d) % len(points)][0] - points[(i + d) % len(points)][0], 
               points[(i + 2*d) % len(points)][1] - points[(i + d) % len(points)][1])
         cosTheta = float(v1[0] * v2[0]  +  v1[1] * v2[1]) / ( sqrt(sqrDist(v1, (0,0))) * sqrt(sqrDist(v2, (0,0))) + 0.001 )
-#         print(cosTheta)
-#         return 0
-#         totalChange += abs(acos(abs(cosTheta)))
+
         if i > 1:
             firstDeriv.append( cosTheta - prevChange )
             prevChange = cosTheta
+            
     sum1 = 0
     for i in range(0, len(firstDeriv)):
         if abs(sin(firstDeriv[i])) < 0.1:
             sum1 += 1
-#     avg = sum / float(len(firstDeriv))
+    # calculates the stdev, if desired
+#     avg = sum1 / float(len(firstDeriv))
 #     sumDiffs = 0
 #     for i in range(0, len(firstDeriv)):
 #         sumDiffs += (firstDeriv[i] - avg)**2
@@ -95,6 +78,10 @@ def getCurvature( points ):
     return sum1 / float(len(points))
 
 def getCurvature2( points ):
+    '''
+    approximates curvature in a list of points
+    finds the longest chain of points which curve relatively little, divided by the length of the list
+    '''
     longestChain = 0
     currentChain = 0
     prevChange = 0
@@ -108,9 +95,7 @@ def getCurvature2( points ):
         v2 = (points[(i + 2*d) % len(points)][0] - points[(i + d) % len(points)][0], 
               points[(i + 2*d) % len(points)][1] - points[(i + d) % len(points)][1])
         cosTheta = float(v1[0] * v2[0]  +  v1[1] * v2[1]) / ( sqrt(sqrDist(v1, (0,0))) * sqrt(sqrDist(v2, (0,0))) + 0.001 )
-#         print(cosTheta)
-#         return 0
-#         totalChange += abs(acos(abs(cosTheta)))
+
         if abs(cos(cosTheta - prevChange)) > 0.85:
             currentChain += 1
             if currentChain > longestChain:
@@ -123,8 +108,8 @@ def getCurvature2( points ):
     return longestChain / float(len(points))
 
 
-        
-
+# uses techniques found in __ to calculate the parameters of a generalized ellipse from
+# the parameters to the equation's general conic form. 
 def getParameters( A, B, C, D, E, F):
     if B**2 - 4*A*C >= 0:
 #         raise Exception("Not an ellipse")
@@ -142,15 +127,13 @@ def getParameters( A, B, C, D, E, F):
     eigs = numpy.linalg.eig(M)[0]
     l1 = 0
     l2 = 0
-#     print(eigs, A, C, abs(eigs[0] - A), abs(eigs[0] - C))
-#     print(eigs, A, C, abs(eigs[1] - A), abs(eigs[1] - C))
+    
     if abs(eigs[0] - A) <= abs(eigs[0] - C):
         l1 = eigs[0]
         l2 = eigs[1]
     else:
         l1 = eigs[1]
         l2 = eigs[0]
-#     print(l1, l2)
     a = 0
     b = 0
     try:
@@ -165,16 +148,16 @@ def getParameters( A, B, C, D, E, F):
     k = (B*D - 2*A*E)/(4*A*C - B**2)
     t = (pi/2 - atan( (A-C)/(B+0.000000001) )) / 2
     
-#     print(a,b)
-#     if (tan(t) > 0.999999999999999) | ( b > a):
     if ( b > a):
         temp = a
         a = b
         b = temp
-#     print(a,b)
+
     return a, b, h, k, t
 
-def closeness(list1, list2): #list1 is the image, list2 is the equation
+# calculates the closeness between two lists of points by searching the entirety of list2  
+# for a point close to each element in list1
+def closeness(list1, list2): #list1 is the fiber outline, list2 is the calculated equation
     goodPoints = 0
     cutOffDist = 3
     if sqrDist( list1[0], list2[0] ) < cutOffDist:
@@ -183,12 +166,13 @@ def closeness(list1, list2): #list1 is the image, list2 is the equation
     for i in range(1, len(list1)):
         for j in range(1, len(list2)):
             if (( list1[i], list2[j] ) != ( list1[i-1], list2[j-1] )) & (sqrDist( list1[i], list2[j] ) < cutOffDist):
-#                 print( list1[i], list2[j])
                 goodPoints+=1
                 break
-#     print(goodPoints, float(len(list2) ) )
     return goodPoints / float(len(list1))
 
+# calculates the closeness between a list of points approximating a fiber-outline and an actual ellipse  
+# by checking the sum of the distances from each point in the list to the foci, as compared to the ellipse's
+# string length
 def closeness2(points, a, b, h, k, t):
     goodPoints = 0
     tolerance = 0.01 # only allow an x% difference
@@ -196,40 +180,32 @@ def closeness2(points, a, b, h, k, t):
     f1 = ( h - cos(t) * c, k - sin(t) * c )
     f2 = ( h + cos(t) * c, k + sin(t) * c )
     s = 2 * a
-#     if printOutput:
-#         print( s, f1, f2 )
+
     for i in range(0, len(points)):
         distF1 = sqrt(sqrDist(points[i], f1))
         distF2 = sqrt(sqrDist(points[i], f2))
         error1 = ( distF1 + distF2 ) / s
-#         print( distF1, distF2, distF1+distF2, s, error1)
         if abs(error1 - 1) < tolerance:
             goodPoints+=1
     return goodPoints / float(len(points))
 
+# plug the point into the ellipse equation, and see how far off the scale has to be in order for the ellipse
+# to go through that point
 def closeness3(points, a, b, h, k, t):
     goodPoints = 0
     for i in range(0, len(points)):
         x, y = points[i]
-#         print(x, " ",y)
-        #plug the point into the ellipse equation, and see how far off the scale has to be in order
-        # to go through that point
         scale = ((x - h)*cos(t) + (y - k)*sin(t))**2 / a**2 + ((x - h)*sin(t) - (y - k)*cos(t))**2 / b**2
         if abs(scale - 1) < 0.01:
             goodPoints+=1
     return goodPoints / float(len(points))
-
-def null(A, eps=1e-15):
-    u, s, vh = numpy.linalg.svd(A)
-    null_space = numpy.compress(s <= eps, vh, axis=0)
-    return null_space.T
 
 def getRow( p ):
     x = p[0]
     y = p[1]
     return [ x*x, x*y, y*y, x, y]
 
-#points has 4 points in it
+# solves the system of ellipse equations for 5 points
 def generalizedSolve( pList ):
     
     A = numpy.array([ getRow(pList[0]),
@@ -239,20 +215,10 @@ def generalizedSolve( pList ):
                       getRow(pList[4]) ])
     B = numpy.array( [1, 1, 1, 1, 1] )
     numpy.set_printoptions(8, 1000, 3, 140, True, 'nan', 'inf')
-#     print(A)
-#     X = numpy.linalg.solve(Ap, B)
     
     x = numpy.linalg.solve(A, B)
-#     print(x)
+    
     return x
-#     P,L,U= scipy.linalg.lu(A)
-#     print(P)
-#     print(L)
-#     print(U)
-#     s = numpy.linalg.svd(A)
-#     print(s)
-#     print("")
-#     scipy.linalg.lu_solve(   scipy.linalg.lu_factor(A, False, False), B, 0, False, False)
 
 def getSpacedPoints(list1, start, r):
     s = len(list1)
@@ -264,10 +230,9 @@ def getSpacedPoints(list1, start, r):
 
 
 def getBestFit( data, minW, maxL ):
-    
     # list = [ list1[(len(list1)*1)/15], list1[(len(list1)*10)/15], list1[(len(list1)*0)/15], list1[(len(list1)*3)/15], list1[(len(list1)*7)/15]  ]
     approx = []
-    im = Image.new("L", (1400, 800), 0)
+#     im = Image.new("L", (1400, 800), 0)
     a1 = 0
     b1 = 0
     h1 = 0
@@ -326,9 +291,7 @@ def getBestFit( data, minW, maxL ):
                             percentSame = localSame
                             localBestP = pNum
                             bestLocalNudge = nudge
-    #             print(a1*bestScale, b1*bestScale, "in mainLoop")
-    #             print( i * 20 / r)
-    
+                    # debugging section
     #                 if (i) < -10:
     #                     print("here", percentSame)
     #                     scale = sqrt( ((x - h1)*cos(t1) + (y - k1)*sin(t1))**2 / a1**2 + ((x - h1)*sin(t1) - (y - k1)*cos(t1))**2 / b1**2 ) 
@@ -362,64 +325,43 @@ def getBestFit( data, minW, maxL ):
                     bestR = r
                 
             except ValueError:
-    #             print('.',count)
                 ()
             except numpy.linalg.linalg.LinAlgError:
                 ()
     
-#     recalculate using the best version of c you found
-#     print(bestPercent)
+#     recalculate using the best version of c found
     if bestPercent > 0.10:
         list1 = getSpacedPoints(data, bestStart, bestR)
-#         list = [ data[c + r*0/5], data[c + r*1/5], data[c + r*2/5], data[c + r*3/5], data[c + r*4/5],  ]
         A, B, C, D, E = generalizedSolve( list1 )
         a1, b1, h1, k1, t1 = getParameters(A, B, C, D, E, 1)
         print("...........")
         h1 = h1 - 1 + bestNudge % 3
         k1 = k1 - 1 + bestNudge / 3
 
-#         print(a1, b1, A, B, C, D, E)
-#         scale = 1/pow(a1,1/float(2))
-#         print(a1,b1, a1*scale, b1*scale)
         x = list1[bestP][0]
         y = list1[bestP][1]
         scale = sqrt( ((x - h1)*cos(t1) + (y - k1)*sin(t1))**2 / a1**2 + ((x - h1)*sin(t1) - (y - k1)*cos(t1))**2 / b1**2 ) 
         a1 *= scale
         b1 *= scale
-#         if a1 < b1:
-#                 minor = a1
-#                 major = b1
-#         else:
-#                 major = a1
-#                 minor = b1
-#         f = sqrt(abs(major**2 - minor**2))
-#         h = major
-#         print(f/h, avg1)
-#         scale = avg1/b1=
-        
+
         print(a1, b1, h1, k1, t1, "ab")
-#         print(" ")
-#         approx = getEllipseOutline(h1, k1, t1, a1, b1, True)
+
         return a1, b1, h1, k1, t1 , bestPercent, list1
     return 0,0,0,0,0,0,()
 
-    
-# avg=0
-# for i in range(0,5):
-#     avg += parameters1[i]/parameters2[i]
-#     print(parameters1[i]/parameters2[i])
-# avg/=5
-# print(parameters1[5]/avg)
-
+# finds the longest distance in a list of points, as a proxy for the major axis of the ellipse they represent
+# it checks the distance between each point and the one (data.length/2) indices away from it.
 def longestDist(data):
-    max = 0
+    maxDist = 0
     for i in range(0, int(len(data)/2)):
-#         print(data[i])
         dist = sqrDist(data[i], data[int((i+len(data)/2)) % len(data)])
-        if dist > max:
-            max = dist
-    return sqrt(max)
+        if dist > maxDist:
+            maxDist = dist
+    return sqrt(maxDist)
 
+# gets an initial guess for the Levenburg-Marquedt nonlinear solving algorithm
+# the center is estimated as the area center of the list of points
+# the angle is the 
 def getGuess(data, minW):
     a0 = longestDist(data)/2
     b0 = minW

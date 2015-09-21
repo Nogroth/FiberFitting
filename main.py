@@ -52,23 +52,27 @@ def getTheta(coord):
 #based on an input rotation of the centerline. the centerline starts on the x-axis.
 #side1 is the centered at theta + pi/2
 
-def getLightnessDiffference( square, theta ):
-    theta -= 0.0001
+def getLightnessDiffference( sqr, theta ):
+    theta += 0.001
     side1 = [0,0,0]
     side2 = [0,0,0]
-    boxW = len(square[0])
+    boxW = len(sqr[0])
     lBound = int(0 - boxW/2)
     hBound = boxW + lBound #ensures odd boxW's don't result in too short a range due to integer division
     s1Count = 0
     s2Count = 0
-    
-    for i in range(lBound, hBound):
-        for j in range(lBound, hBound):
-#                 print(i, j, k)
+
+    for i1 in range(lBound, hBound):
+        for j1 in range(lBound, hBound):
+            if j1 == 0:
+                continue
+            i = i1
+            j = j1
+            
             tempTheta = getTheta( (i, j) )
             lThetaBnd = theta
             hThetaBnd = theta + math.pi
-#             print(tempTheta, lThetaBnd, hThetaBnd, lThetaBnd - 2* math.pi, hThetaBnd - 2* math.pi )
+            
             while (tempTheta < lThetaBnd) & (hThetaBnd > 2* math.pi):
                 hThetaBnd -= 2* math.pi
                 lThetaBnd -= 2* math.pi
@@ -76,22 +80,41 @@ def getLightnessDiffference( square, theta ):
                 hThetaBnd += 2* math.pi
                 lThetaBnd += 2* math.pi
                 
+            distFromLine = sqrt((i**2 +j**2))*abs(math.tan(tempTheta - hThetaBnd))
+            
+            #pretending the pixel is a circle whose radius goes from 0.5 to 1.0 as theta goes from 0 to pi/2
+            rPixel = 0.5 + 0.2071*sin(2*theta)
+
             if (tempTheta > lThetaBnd) & ( tempTheta < hThetaBnd):
-#                     im.putpixel((i+x,j+y), (0,255,0))
+
                 for k in range(0,3):
-                    side1[k] += square[i][j][k]
-                s1Count += 1
+                    if abs(distFromLine) < rPixel:
+                        
+                        side1[k] += sqr[i1][j1][k] * (distFromLine/(rPixel*2) + 0.5)
+                        s1Count += distFromLine/(rPixel*2) + 0.5
+                        side2[k] += sqr[i1][j1][k] * (0.5 - distFromLine/(rPixel*2))
+                        s2Count += 0.5 - distFromLine/(rPixel*2)
+                    else:
+                        side1[k] += sqr[i1][j1][k]
+                        s1Count += 1
             else:
 #                     im.putpixel((i+x,j+y), (255,0,0))
                 for k in range(0,3):
-                    side2[k] += square[i][j][k]
-                s2Count += 1
+                    if abs(distFromLine) < rPixel:
+                        # a little more than half the width of a single pixel 
+                        # I'm pretending the pixel's a circle, and r=0.56 gives the circle an equal area to a 1x1 square
+                        side2[k] += sqr[i1][j1][k] * (distFromLine/(rPixel*2) + 0.5)
+                        s2Count += distFromLine/(rPixel*2) + 0.5
+                        side1[k] += sqr[i1][j1][k] * (0.5 - distFromLine/(rPixel*2))
+                        s1Count += 0.5 - distFromLine/(rPixel*2)
+                    else:
+                        side2[k] += sqr[i1][j1][k]
+                        s2Count += 1
+
     difference = [0,0,0]
-    for i in range(0,3):
-#         print(side1[i]/float(s1Count))
-        difference[i] = side1[i]/s1Count - side2[i]/s2Count
-#     print(int(theta/math.pi * 180+0.5), s1Count, s2Count)
-#     im.save("temp.bmp")
+    for i1 in range(0,3):
+        difference[i1] = side1[i1]/s1Count - side2[i1]/s2Count
+        
     return difference
   
 def getSquare( pixels, boxW, x, y ):
@@ -121,13 +144,6 @@ def absBiggerThan( a1, a2 ):
 def sqrDist( p1, p2 ):
     return (p1[0] - p2[0])**2 + (p1[1] - p2[1])**2
 
-# def getSplotchyImage( im, cutoff ):
-#     pixels = im.load()
-#     width, height = im.size
-#     for i in range( 0, width):
-#         for j in range( 0, height):
-#             
-#             if pixels[i,j]
 def getMidPoint(p1, p2):
     return ( int((p1[0]+p2[0])/2), int((p1[1]+p2[1])/2) )
 
@@ -141,31 +157,6 @@ def getLineMatrix( p1, p2 ):
         if p != line[len(line)-1]:
             line.append( p )
     return line
-
-# def drawLineMatrix( pix, p1, p2 ):
-#     
-#     line = getLineMatrix(pix, p1, p2)
-#     
-#     
-# def getPolygonMatrix( pix, points ):
-#     outline = []
-#     for i in range(0, len(points)-1):
-#         outline += getLineMatrix(pix, points[i], points[i+1])
-#     outline += drawLineMatrix(pix, points[len(points)-1], points[0])
-#     return outline
-# 
-# 
-# def drawPolygonMatrix( pix, points ):
-#     outline = []
-#     for i in range(0, len(points)-1):
-#         outline += drawLineMatrix(pix, points[i], points[i+1])
-#     drawLineMatrix(pix, points[len(points)-1], points[i+1])
-# 
-#     
-# def fillPolygonMatrix( pix, points ):
-#     assert False == True
-#     drawPolygonMatrix(pix, points)
-#     
 
 def getOutline(pixels, w, h, boxW, maxLength, i, j, avg, tol):
     '''
@@ -282,20 +273,21 @@ def getBestAngle(sqr):
     halfPrevMovement = math.pi
     usedTheta = - math.pi / 2
     for i in range(0, 8):
-        diff = getLightnessDiffference2(sqr, usedTheta)
+        diff = getLightnessDiffference(sqr, usedTheta)
         halfPrevMovement /= 2.0
         if biggerThan(diff, (0,0,0)):
             usedTheta -= halfPrevMovement
         else:
             usedTheta += halfPrevMovement
         i+=0
-#         print(i, usedTheta)
+
     return usedTheta + math.pi / 2
+
 
 def checkPoint( square ):
     
     theta = getBestAngle(square)
-    diff = getLightnessDiffference2(square, theta)
+    diff = getLightnessDiffference(square, theta)
     
     return theta, diff
 
@@ -308,7 +300,6 @@ def getBestInRegion( pixels, width, height, boxW, x, y, searchSize, skipSize, pr
     for j in range(-r, r+1, 1 + int(r/3)):
         for i in range(-r, r+1, 1 + int(r/3)):
             
-#             print(i,)
             if x + i + 4 >= width:
                 break
             elif y + j + 4 >= height:
@@ -322,10 +313,10 @@ def getBestInRegion( pixels, width, height, boxW, x, y, searchSize, skipSize, pr
                 if prevP != 'n':
                     if sqrDist(prevP, (x + i, y + j)) > skipSize**2:
                         midP = getMidPoint(prevP, (x + i, y + j))
+                        
                         # this checks if the difference is bigger than the tolerance
                         # but it's only true if the pixels are more than tol darker than the average,
                         # not tol lighter.
-
                         diff = diffVec(avg, pixels[midP[:]])
                         
                         if not biggerThan(  diff, tol):
@@ -381,22 +372,13 @@ def getEllipseOutline( x0, y0, alpha, a, b, fine):
 
 def fillEllipse( im, x0, y0, alpha, a, b, col):
 #     '''
-#     assume points are in order
-#     draw a line from each point to the next
-#     find an interior point
-#     fill the area using magical black box
+#     get points on the outline of the specified ellipse
+#     create polygon using those points
+#     draw/fill polygon
 #     '''
     pnts = getEllipseOutline(x0, y0, alpha, a, b, True)
     draw = ImageDraw.Draw(im)
     draw.polygon(pnts, fill=col)
-#     
-#     s = len(pnts)
-#     for i in range(0, s):
-#         draw.line( ( int(pnts[i][0]), int(pnts[i][1]), int(pnts[(i + 1) % s][0]), int(pnts[(i + 1) % s][1]) ), col, 1)
-#     
-#     insidePnt = (int(pnts[0][0] + (pnts[int(s/2)][0] - pnts[0][0]) / 2), int(pnts[0][1] + (pnts[int(s/2)][1] - pnts[0][1]) / 2))
-#     
-#     ImageDraw.floodfill(im, insidePnt, col, border=None)
 
 def roundToNearest(x):
     return int(round(x) - .5) + (x > 0)
@@ -406,7 +388,6 @@ def sumVec(v1,v2):
 
 def diffVec(v1,v2):
     v = (v1[0]-v2[0], v1[1]-v2[1], v1[2]-v2[2])
-#     print(v, v1[0], v2[0])
     return v
 
 
@@ -426,6 +407,9 @@ def isBreakPoint(outline, i):
     '''
     make it take into account the sine of the angle (cross product?), and from that deduce the quadrant that the angle
     is in, and thereby be able to distinguish 179 degrees from 1 degree.
+    ?
+    might not be necessary
+    cross product is expensive
     '''
     i3a = (i-3) % len(outline)
     i2a = (i-2) % len(outline)
@@ -434,8 +418,6 @@ def isBreakPoint(outline, i):
     i1b = (i+1) % len(outline)
     i2b = (i+2) % len(outline)
     i3b = (i+3) % len(outline)
-#     v1 = numpy.array([[outline[ i0 ][0]-outline[ i1 ][0]], [outline[ i0 ][1]-outline[ i1 ][1]]])
-#     v2 = numpy.array([[outline[ i0 ][0]-outline[ i2 ][0]], [outline[ i0 ][1]-outline[ i2 ][1]]])
 
     a1 = getAngle(getVecInOutline( i0, i1a, outline), getVecInOutline( i0, i1b, outline))
     a2 = getAngle(getVecInOutline( i0, i2a, outline), getVecInOutline( i0, i2b, outline))
@@ -443,7 +425,6 @@ def isBreakPoint(outline, i):
     
     angle = (a1 + a2 + a3)/3
     
-#     sinAngle = cross(v2,v1)/denom
 #     print(cosAngle, outline[i1], outline[i0], outline[i2], cosAngle > -0.0001)
     return angle > -1/2
 
@@ -457,11 +438,12 @@ def getSlice(outline, i1,i2):
     else:
         return outline[i1:len(outline)] + outline[0:i2]
     
-'''
-if a point has too high of a curvature, replace that element of splitlist with the first part of that section,
-and add the other to the end. If either section is too small, don't add it.
-'''
+
 def splitOutline( outline ):
+    '''
+    if a point in a list has too high of a curvature, replace that list (in splitlist) with the preceding part of the list,
+    and add a list containing the remaining points to the end. If either section is too small, don't add it.
+    '''
 #     outline = [
 #                (14,5),
 #                (10,8),
@@ -503,7 +485,9 @@ def splitOutline( outline ):
     for i2 in range(0, len(outline)):
         if isBreakPoint(outline, (i2 + start)%len(outline)):
             bP.append((i2 + start)%len(outline))
+            
     print("BP: ", bP)
+    
     for i3 in range(0, len(bP)):
         if abs(bP[i3]+1 - bP[(i3-1)%len(bP)]) > 0:
 #             splitList.append(outline[bP[i-1]:bP[i]])
@@ -523,9 +507,10 @@ def splitOutline( outline ):
     print("SplitList", len(splitList), len(splitList[int(len(splitList)/2)]))
     return splitList
 
-def compareEllipses(e1, e2):
-    
-    return True
+def ellipsesAreSame(e1, e2):
+    # returns true if the ellipses are close/similar, in some metric
+    #not yet implemented
+    return False
 
 def avgEll( e1, e2 ):
     a = (e2[0] + e1[0])/2
@@ -551,32 +536,9 @@ def sqrOk( square, avg, tol ):
 
 maybe:
 
-put it through a really really simple threshhold filter thingy-
-    everything above avg + n*stdev = white
-    everything below avg + n*stdev = black
-But who knows if that'd work. If it did, I'd just put a point in the center of each of those splotches,
-and have it work just like the above one. The only issue is that it would detect light colored things in
-the background (esp the blue image) and try to calculate it for those.
-
-Fix the thing so instead of getting 10 backwards things, give it a certain bank of distance backwards
-for it to use. Or maybe just a distance backwards maximum cutoff for each point. How far (distance, not angle)
- to the right is the point from the line made by the two previous points. ?
- ignore to the left? Or just do the thing and if the jump is too big in either direction, split the ellipse.
- No. Find a way to check the curvature of the last x points and split it based on that.
- 
- Maybe try that parametric thingy online. Maybe just see if you can make approximate a curve with x points using 
- something like
- x = at^3 + bt^2 + ct + d
- y = et^3 + ft^2 + gt + h
- and solve it using the last 4 points? 4 points relatively equally spaced over the last x pixels of distance?
- Like go backwards in the list until you find a point more than x distance away, and then use 4 spaced points
- from that sublist. 
- 
  TODO
  approximate curvature of last x points, for splitting, and compare those two generated ellipses to each other
- find good initial points - coarse filter, take middle point(?)
- measure closeness of ellipse - matrixy stuff
- try other approximation methods
+ ?measure closeness of ellipse - matrixy stuff?
  
 '''
 
@@ -689,9 +651,6 @@ def standAlone( imName ):
     stdev, avg = getStats(pixels, width, height)
     
     #the tolerances for picking a "good" point
-#     highContrast = [ 3*x/8 for x in stdev ]
-#     midContrast = [ x/4 for x in stdev ]
-#     lowContrast = [ x/8 for x in stdev ]
     highContrast = [ 2*x/8 for x in stdev ]
     midContrast = [ 5*x/32 for x in stdev ]
     lowContrast = [ x/8 for x in stdev ]
@@ -708,6 +667,7 @@ def standAlone( imName ):
     # it probably could be much higher than it is now. This loop only needs to find 1 dot
     # on every ellipse; not all of the dots.
     # 14 missed an ellipse
+    # it'l have to be dependent on the scale of the ellipses in the image
     skipSize = int(boxW / 2)
 
     outlineList = []
@@ -725,44 +685,39 @@ def standAlone( imName ):
 
     startX = offset[0]
     startY = offset[1]
-#     startX = 280
-#     startY = 202
-#     startX = 28
-#     startY = 150
     
     for j in range(startY, height - offset[1], skipSize):
-#         if len(outlineList)>0:
-#             break
+
         for i in range(startX, width - offset[0], skipSize):
 
             '''
             1. check point
-            2. if point is good, try to find an ellipse
-            3. if there are enough points for an ellipse, add it to the list
+            2. if point is good, try to trace outline
+            3. if there are enough points in the outline, add it to the list
             '''
             #test on 401x302
             #took about 23 mins, most of which felt like the continuous loops
             
             square = getSquare(pixels, boxW, i, j)
-#             print(sqrOk(square, avg, midContrast))
+
             #first examine the square to see if it's worth calculating
             if sqrOk(square, avg, midContrast):
                 
+                #theta's ignored here
                 theta, diff = checkPoint(square)
-#                 print(diff)
+
                 if absBiggerThan(diff, midContrast):
 
                     p,t,d = getBestInRegion(pixels, width, height, boxW, i, j, int(skipSize/2), skipSize, 'n', 'n', avg, lowContrast)
-#                     print(i,j,p,d, highContrast)
+
                     if absBiggerThan(d, highContrast):
                         
                         outline = getOutline(pixels, width, height, boxW, maxLength, p[0], p[1], avg, lowContrast)
                         print("length: ",len(outline))
                         if len(outline) < 10:
                             continue
-                        # split the outline here, before you fill it in.
-                        # Pass it as a list.
                         
+                        # split the outline here, before you fill it in.
                         splitOutlines = splitOutline( outline )
 
                         outlineList.append(splitOutlines)
@@ -780,23 +735,18 @@ def standAlone( imName ):
 
     print("100% checked")
     print("Printing points")
-#     im2.show()
-#     im.show()
-#     im.save("test2.bmp")
-#     return
+
     print(outlineList)
     for i1 in range(0, len(outlineList)):
         for i2 in range(0, len(outlineList[i1])):
             if len(outlineList[i1][i2]) > 4:
                 drawOutline(outlineList[i1][i2], im)
                 
-#     im.show()
     
     start = 0
-#     end = 1
     end = len(outlineList)
     ellipseList = []
-    fiberList = []
+
     print("len(outlineList) = ", len(outlineList))
     
     for i2 in range(start, end):
@@ -820,147 +770,21 @@ def standAlone( imName ):
     return im, out, ellipseList
 
 
-def getLightnessDiffference2(sqr, theta):
-    theta += 0.001
-    side1 = [0,0,0]
-    side2 = [0,0,0]
-    boxW = len(sqr[0])
-    lBound = int(0 - boxW/2)
-    hBound = boxW + lBound #ensures odd boxW's don't result in too short a range due to integer division
-    s1Count = 0
-    s2Count = 0
-#     for i1 in range(lBound, hBound):
-#         string = ""
-#         for j1 in range(lBound, hBound):
-#             i = i1 #+ 0.5
-#             j = j1 #+ 0.5
-#             if i>=0:
-#                 string+=" "
-#             string += str(i)+","
-#             if j>=0:
-#                 string += " "
-#             string+= str(j)+"  "
-#         print(string)
-#         print("")
-    for i1 in range(lBound, hBound):
-        for j1 in range(lBound, hBound):
-            if j1 == 0:
-                continue
-            i = i1 #+ 0.5
-            j = j1 #+ 0.5
-#                 print(i, j, k)
-            
-            tempTheta = getTheta( (i, j) )
-            lThetaBnd = theta
-            hThetaBnd = theta + math.pi
-#             print(tempTheta, lThetaBnd, hThetaBnd, lThetaBnd - 2* math.pi, hThetaBnd - 2* math.pi )
-            while (tempTheta < lThetaBnd) & (hThetaBnd > 2* math.pi):
-                hThetaBnd -= 2* math.pi
-                lThetaBnd -= 2* math.pi
-            while (tempTheta > hThetaBnd) & (lThetaBnd < 0):
-                hThetaBnd += 2* math.pi
-                lThetaBnd += 2* math.pi
-                
-            distFromLine = sqrt((i**2 +j**2))*abs(math.tan(tempTheta - hThetaBnd))
-#             if j == 0:
-#                 print("___", i, j, math.atan( i / (j+0.000001) ))
-#                 print(tempTheta , hThetaBnd)
-            # rPixel goes between 0.5 and sqrt(0.5) depending on the dividing angle
-            # r(    0 + n*pi/2) = 0.5
-            # r( pi/4 + n*pi/2) = sqrt(0.5)
-            rPixel = 0.5 + 0.2071*sin(2*theta)
-#             if abs(distFromLine) < rPixel:
-#             print(tempTheta/math.pi*180, i1, j1, distFromLine/rPixel)
-#             print(i,j,int(tempTheta/math.pi *180+0.5), distFromLine )
 
-#             print(abs(distFromLine))
-            if (tempTheta > lThetaBnd) & ( tempTheta < hThetaBnd):
-#                     im.putpixel((i+x,j+y), (0,255,0))
-                for k in range(0,3):
-                    if abs(distFromLine) < rPixel:
-                        # a little more than half the width of a single pixel 
-                        # I'm pretending the pixel's a circle, and r=0.56 gives it an equal area
-                        side1[k] += sqr[i1][j1][k] * (distFromLine/(rPixel*2) + 0.5)
-                        s1Count += distFromLine/(rPixel*2) + 0.5
-                        side2[k] += sqr[i1][j1][k] * (0.5 - distFromLine/(rPixel*2))
-                        s2Count += 0.5 - distFromLine/(rPixel*2)
-                    else:
-                        side1[k] += sqr[i1][j1][k]
-                        s1Count += 1
-            else:
-#                     im.putpixel((i+x,j+y), (255,0,0))
-                for k in range(0,3):
-                    if abs(distFromLine) < rPixel:
-                        # a little more than half the width of a single pixel 
-                        # I'm pretending the pixel's a circle, and r=0.56 gives it an equal area
-                        side2[k] += sqr[i1][j1][k] * (distFromLine/(rPixel*2) + 0.5)
-                        s2Count += distFromLine/(rPixel*2) + 0.5
-                        side1[k] += sqr[i1][j1][k] * (0.5 - distFromLine/(rPixel*2))
-                        s1Count += 0.5 - distFromLine/(rPixel*2)
-                    else:
-                        side2[k] += sqr[i1][j1][k]
-                        s2Count += 1
+def main():
+    import datetime
+    d1 = datetime.datetime.now()
+    # file = "Images/smallerTest.jpg"
+    file = "Images/tinyTest.jpg"
+    im2, out, outlines = standAlone(file)
+    out.show()
+    im2.show()
+    # im2.save("output.bmp")
+    # out.save("output2.bmp")
+    d2 = datetime.datetime.now()
+    diff = d2-d1
+    print(diff)
 
-    difference = [0,0,0]
-    for i1 in range(0,3):
-#         print(side1[i1],side2[i1], s1Count, s2Count)
-        difference[i1] = side1[i1]/s1Count - side2[i1]/s2Count
-#     print(int(theta/math.pi * 180+0.5), side1[i1], side2[i1], s1Count, s2Count)
-#     im.save("temp.bmp")
-    return difference
-
-#
-#
-
-()
-
-
-import datetime
-d1 = datetime.datetime.now()
-# file = "Images/smallerTest.jpg"
-file = "Images/tinyTest.jpg"
-im2, out, outlines = standAlone(file)
-out.show()
-im2.show()
-# im2.save("output.bmp")
-# out.save("output2.bmp")
-d2 = datetime.datetime.now()
-diff = d2-d1
-print(diff)
-# 
-# print(1/0)
-
-def testStuff():
-    im = Image.open("Images/ellipse.jpg")
-    # im.show()
-    im = im.convert('RGB')
-    pixels = im.load()
-    w,h = im.size
-    sqrSize = 5
-    sqr = getSquare(pixels, sqrSize, 29, 149)
-    list1 = []
+if __name__ == "__main__":
+    main()
     
-#     for i in range(-2,3):
-#         for j in range(-2,3):
-#             print(i,j,getTheta((i,j))/math.pi*180)
-    
-#     best = getBestAngle(sqr)/math.pi*180
-#     print(best)
-#     print(int(getLightnessDiffference2(sqr, (best-90)/180*math.pi)[0] * 10000) / 10000)
-#     return
-    prevDiff = 0.0
-    for t in range(0,360):
-        theta = t/180 * math.pi
-        diff = getLightnessDiffference2(sqr, theta)[0]
-#         print(diff)
-#         diff2 = getLightnessDiffference(sqr, theta)[0]
-        if (len(list1) == 0):
-            list1.append((t,diff))
-        elif (diff != list1[len(list1)-1][1]):
-            list1.append((t,diff, diff - prevDiff))
-        else:
-            list1.append((t,diff, diff - prevDiff, "DUP"))
-        prevDiff = diff
-    # print(len(list1))
-    for i in range(len(list1)):
-        print(list1[i])

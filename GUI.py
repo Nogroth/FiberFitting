@@ -222,7 +222,7 @@ class EllipseCollection:
         self.bindKeys()
         
         self.root.mainloop()
-#         deleteSelection()
+
     def makeButtons(self):
         w = 20
         delete = Button(self.menu, text = "Delete", command = self.deleteSelection, anchor = W)
