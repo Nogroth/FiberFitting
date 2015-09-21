@@ -32,7 +32,7 @@ When finished, the program will:
 ----|----The gui will let you save your edited version as a new file or binary image.
 
 
-Current differences:
+Current shortcomings:
 
 ----It only processes the image located at the path written out in the code, not all the images in the cwd
 
