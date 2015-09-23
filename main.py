@@ -17,7 +17,6 @@ It's a description of finding skew in an image, by finding long lines which have
 '''
 
 from PIL import Image, ImageDraw
-import math
 from colorSpread import getStats
 from EllipseMath import sqrDist
 from numpy.linalg import *
@@ -51,7 +50,6 @@ def getTheta(coord):
 #function that will calculate the amount that side2 of a given 9x9 square is lighter than side1, 
 #based on an input rotation of the centerline. the centerline starts on the x-axis.
 #side1 is the centered at theta + pi/2
-
 def getLightnessDiffference( sqr, theta ):
     theta += 0.001
     side1 = [0,0,0]
@@ -191,7 +189,7 @@ def getOutline(pixels, w, h, boxW, maxLength, i, j, avg, tol):
         i += skipSize * math.cos(t)
         j += skipSize * math.sin(t)
 
-        nxtP, t, diff = getBestInRegion(pixels, w, h, boxW, i, j, 2, skipSize, prevP, 'n', avg, tol, len(outline))
+        nxtP, t, diff = getBestInRegion(pixels, w, h, boxW, i, j, 2, skipSize, prevP, avg, tol)
         i,j = nxtP
 
         nxtP = tuple([int(x) for x in nxtP])
@@ -200,24 +198,20 @@ def getOutline(pixels, w, h, boxW, maxLength, i, j, avg, tol):
             print("No valid next point", prevP, len(outline))
             outline = []
             break
-#         print(nxtP, prevP)
-#         print(nxtP, prevP,footprints[nxtP[0]][nxtP[1]], footprints[prevP[0]][prevP[1]])
+        
         if nxtP != prevP:
-#             index = footprints[nxtP[0]][nxtP[1]]
-#             if index != 0:
-#                 # means that that point has been printed before; it could have been printing points
-#                 # right next to previous points though, before it hit this one right on.
-#                 # so backtrack until the examined point is far enough from any other points, and
-#                 # then re-define the list to cut off everything afterwards - 1.
+
+
             looping = False
             line = getLineMatrix( prevP, nxtP)
             for p in line:
-#                 print(p)
                 if footprints[p[0]][p[1]] != 0:
                     looping = True
             if looping:
                 # means that nxtP and prevP are on either side of a previously drawn line; means that that section
                 # has been traced before, and so the loop needs to stop.
+                # so backtrack until the examined point is far enough from any other points, and
+                # then re-define the list to cut off everything afterwards - 1.
                 start = 0
                 for start in range(len(outline)-4, -1, -1):
 #                     print(start, sqrDist(outline[start], outline[len(outline)-1]), cutOffSqrDist / 5)
@@ -226,19 +220,17 @@ def getOutline(pixels, w, h, boxW, maxLength, i, j, avg, tol):
                 outline = outline[start:]
                 
                 print("Went into loop")
-#                 print(1/0)
                 break
                 
             if ((i - boxW/2 < 0)
                 |(j - boxW/2 < 0)
                 |(i + boxW/2 > w)
                 |(j + boxW/2 > h)):
-#                 print(i,j, t, prevT, nxtP)
+                
                 print("Went off-screen")
                 break
             
             outline.append(nxtP)
-#             footprints[nxtP[0]][nxtP[1]] = len(outline) #this marks footprints for each point
             for p in line: # this marks footprints both at and between each point
                 footprints[p[0]][p[1]] = len(outline)
             prevP = nxtP
@@ -283,7 +275,6 @@ def getBestAngle(sqr):
 
     return usedTheta + math.pi / 2
 
-
 def checkPoint( square ):
     
     theta = getBestAngle(square)
@@ -292,11 +283,14 @@ def checkPoint( square ):
     return theta, diff
 
 
-def getBestInRegion( pixels, width, height, boxW, x, y, searchSize, skipSize, prevP, prevT, avg, tol, tempCount=0 ):
+# def getBestInRegion( pixels, width, height, boxW, x, y, searchSize, skipSize, prevP, prevT, avg, tol, tempCount=0 ):
+@profile
+def getBestInRegion( pixels, width, height, boxW, x, y, searchSize, skipSize, prevP, avg, tol ):
     bestDiff = [0,0,0]
     bestT = 0
     bestP = (0,0)
     r = searchSize # x pixels away from the starting pixels, inclusive
+    skipSizeSqrd = skipSize**2
     for j in range(-r, r+1, 1 + int(r/3)):
         for i in range(-r, r+1, 1 + int(r/3)):
             
@@ -311,7 +305,7 @@ def getBestInRegion( pixels, width, height, boxW, x, y, searchSize, skipSize, pr
             else:
                 pointIsGood = False
                 if prevP != 'n':
-                    if sqrDist(prevP, (x + i, y + j)) > skipSize**2:
+                    if sqrDist(prevP, (x + i, y + j)) > skipSizeSqrd:
                         midP = getMidPoint(prevP, (x + i, y + j))
                         
                         # this checks if the difference is bigger than the tolerance
@@ -468,8 +462,8 @@ def splitOutline( outline ):
     
     splitList = []
 
-#     splitList.append(outline)
-#     return splitList
+    splitList.append(outline)
+    return splitList
 
     start = -1
     for i1 in range(0, len(outline)):
@@ -579,7 +573,8 @@ def solve(data, minW):
         
         xVec = [ d[0] for d in data ]
         yVec = [ d[1] for d in data ]
-        p1, success = optimize.leastsq(errfunc, p0, args=(xVec,yVec))
+        p1 = optimize.leastsq(errfunc, p0, args=(xVec,yVec))[0]
+#         p1, success = optimize.leastsq(errfunc, p0, args=(xVec,yVec))
         # p1, success = scipy.optimize.root(errfunc, p0, args=(xVec,yVec), method = 'lm')
         a,b,h,k,t = p1[:]
         if b > a:
@@ -635,7 +630,7 @@ def standAlone( imName ):
 #     im.show()
     im = Image.open(imName)
     im2 = im.copy()
-
+    
     boxW = 7 # width of the square used to find boundaries
       
     minWidth = 20
@@ -689,26 +684,25 @@ def standAlone( imName ):
     for j in range(startY, height - offset[1], skipSize):
 
         for i in range(startX, width - offset[0], skipSize):
-
             '''
             1. check point
             2. if point is good, try to trace outline
             3. if there are enough points in the outline, add it to the list
             '''
             #test on 401x302
-            #took about 23 mins, most of which felt like the continuous loops
+            #took about 5.5 mins, most of which felt like the continuous loops
             
             square = getSquare(pixels, boxW, i, j)
 
             #first examine the square to see if it's worth calculating
             if sqrOk(square, avg, midContrast):
                 
-                #theta's ignored here
-                theta, diff = checkPoint(square)
+                #the first result, theta, is ignored here
+                diff = checkPoint(square)[1]
 
                 if absBiggerThan(diff, midContrast):
 
-                    p,t,d = getBestInRegion(pixels, width, height, boxW, i, j, int(skipSize/2), skipSize, 'n', 'n', avg, lowContrast)
+                    p,t,d = getBestInRegion(pixels, width, height, boxW, i, j, int(skipSize/2), skipSize, 'n', avg, lowContrast)
 
                     if absBiggerThan(d, highContrast):
                         
@@ -736,7 +730,7 @@ def standAlone( imName ):
     print("100% checked")
     print("Printing points")
 
-    print(outlineList)
+#     print(outlineList)
     for i1 in range(0, len(outlineList)):
         for i2 in range(0, len(outlineList[i1])):
             if len(outlineList[i1][i2]) > 4:
@@ -751,7 +745,7 @@ def standAlone( imName ):
     
     for i2 in range(start, end):
         splitList = outlineList[i2]
-        possEll = []
+#         possEll = []
         for i3 in range(0, len(splitList)):
             list1 = splitList[i3]
 #             print(i3, len(list1))
