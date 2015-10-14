@@ -3,12 +3,12 @@
 Christopher Hill
 
 
-Apparently someone else has thought up the rotational binary search before
+Apparently someone else has thought up the rotational binary search before:
 http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.308.1650&rep=rep1&type=pdf
 It's a description of finding skew in an image, by finding long lines which have been skewed, 
     and doing a "interval-halving binary search" to find the angle at which the maximum
     number of lines are in the same direction as that angle.
-    Everything but the binary search is different though, and it doesn't solve my bug.
+    Everything but the binary search is different though, and it doesn't help anything I'm doing.
     
     Actually it mentions estimating a confidence value in its binary thing by measuring
     both the min and the max in that binary search region, and returning max/min.
@@ -26,8 +26,10 @@ from scipy import optimize
 from audioop import avg
 import EllipseMath
 from scipy.constants.constants import foot
+from math import cos, sin, pi, sqrt
+from functools import total_ordering
 
-
+    
 def withinTol( color1, color2, tol ):
     r = abs(color1[0] - color2[0])
     g = abs(color1[1] - color2[1])
@@ -122,7 +124,11 @@ def getSquare( pixels, boxW, x, y ):
     for i in range(lBound, hBound):
         square.append([])
         for j in range(lBound, hBound):
-            square[len(square)-1].append( pixels[i + x, j + y] )
+            try:
+                square[len(square)-1].append( pixels[i + x, j + y] )
+            except Exception:
+                print(x,i,y,j)
+                raise
     return square
 
 #returns if a1 is bigger on average than a2
@@ -155,8 +161,116 @@ def getLineMatrix( p1, p2 ):
         if p != line[len(line)-1]:
             line.append( p )
     return line
+    
+def getSqrAvg(sqr):
+    total = [0] * 3
+    for c in range(0, 3):
+        for i in range(0, len(sqr)):
+            for j in range(0, len(sqr)):
+                total[c] += sqr[i][j][c]
+        total[c] /= len(sqr)**2 # might be able to remove this if more speed is needed. Probably wouldn't help much.
+    return total
 
-def getOutline(pixels, w, h, boxW, maxLength, i, j, avg, tol):
+def getVector(p1,p2):
+    return (p2[0]-p1[0], p2[1]-p1[1])
+
+def vecMag(v):
+    return sqrt(v[0]**2 + v[1]**2)
+
+def getCosAngle( v1, v2 ):
+    denom = vecMag(v1)*vecMag(v2)
+    cosAngle = dot(v2,v1)/denom
+    return cosAngle
+
+def getNetDeltaAngle(outline, index, a, b, includeBounds = 0):
+    # idx is starting index
+    # a is number of places to look behind
+    # b is the number to look ahead
+    netAngle = 0;
+    for i in range( index - a + 1 - includeBounds, index + b + includeBounds):
+        
+        p1 = outline[(i-1)%len(outline)]
+        p2 = outline[i]
+        v1 = getVector(p1,p2)
+        
+        p3 = outline[i]
+        p4 = outline[(i+1)%len(outline)]
+        v2 = getVector(p3,p4)
+        
+        t = arccos(getCosAngle(v1, v2))
+        netAngle += t
+    return netAngle
+
+# l = [(0,0),(1,1),(2,1),(3,1),(4,0),(3,-1),(1,-1)]
+# l = [(0,0),(1,0),(2,0),(3,0),(4,0),(5,0),(6,0)]
+# print(getNetDeltaAngle(l, 2, 2, 4))
+# print(1/0)
+
+def getNextPoint(pixels, w, h, boxW, skipSize, i, j, t, veryHighContrast):
+    # t is the angle at the current point, i and j are the location of the current point
+    
+    # current function makes 25 calls to checkPoint each time it's run. Try to use less than 8.
+    
+    # Along a circular path centered at the current point, of radius skipSize, check the lightness difference
+    # between two points along that curve. The two points start out a small rotational distance away from the 
+    # input current angle of contrast t, one on each side, and they move farther and farther from that center
+    # angle until they have checked I think ~80% of the circle. I don't want it to check backwards.
+    
+    bestT = t
+        
+    stop = False
+    
+    nxtP = (0,0)
+    
+    ##this will work so long as skipSize > 1.5, or boxW > 3
+    
+    dt = 1.5*arctan(1/skipSize) #dt is 1.5 times the angle that holds a circumferential distance of one pixel. 
+    for c in range(0, int(pi*skipSize)): #check a range of points
+        
+        #n is 0, 1, -1, 2, -2, 3, -3, etc
+        n = ((-1)**c ) * int((c+3)/2)
+        
+        xL = i + boxW/2*cos(t + n*dt)
+        yL = j + boxW/2*sin(t + n*dt)
+        
+        xM = i + boxW/2*cos(t)
+        yM = j + boxW/2*sin(t)
+        
+        xR = i + boxW/2*cos(t - n*dt)
+        yR = j + boxW/2*sin(t - n*dt)
+        
+#             print(n, n*dt/pi)
+        
+        lSqrAvg = getSqrAvg( getSquare(pixels, boxW, xL, yL) )
+        mSqrAvg = getSqrAvg( getSquare(pixels, boxW, xM, yM) )
+        rSqrAvg = getSqrAvg( getSquare(pixels, boxW, xR, yR) )
+        
+#         outerDiff = diffVec(lSqrAvg, rSqrAvg) # left-right difference
+        lmDiff = diffVec(lSqrAvg, mSqrAvg) # left-middle difference
+        rmDiff = diffVec(rSqrAvg, mSqrAvg) # right-middle difference
+        
+#         outDiffGood = biggerThan(outerDiff, highContrast)
+        lmDiffGood = biggerThan(lmDiff, veryHighContrast)
+        rmDiffGood = biggerThan(rmDiff, veryHighContrast)
+        
+        if lmDiffGood:
+            bestT -= n*dt/2
+            stop = True
+        if rmDiffGood:
+            bestT += n*dt/2
+            stop = True
+            
+        if stop:
+            nxtP = (int(i + skipSize*cos(bestT)), int(j + skipSize*sin(bestT)))
+            print(nxtP)
+            break
+    
+    return nxtP
+    
+    
+def getOutline(pixels, w, h, boxW, maxLength, i, j, avg, stdev):
+    veryHighContrast = [x/3 for x in stdev]
+    lowContrast = [x/8 for x in stdev]
     '''
     input is the first boundary point.
     '''
@@ -164,12 +278,12 @@ def getOutline(pixels, w, h, boxW, maxLength, i, j, avg, tol):
     outline = []
     prevP = (i, j)
     outline.append(prevP)
-#     footprints = [ [0]*h ] * w
-    footprints = numpy.zeros(shape=(w,h))
 
+    footprints = numpy.zeros(shape=(w,h))
+#####
     sqr = getSquare(pixels, boxW, i, j)
     t = getBestAngle(sqr)
-
+#####
     cutOffSqrDist = (3*skipSize)**2
 
     while True:
@@ -177,64 +291,79 @@ def getOutline(pixels, w, h, boxW, maxLength, i, j, avg, tol):
             dist = sqrDist(prevP, outline[0])
 
             if dist <= cutOffSqrDist:
-                print("close to start")
+                print("close to start\n")
                 break
             elif dist > maxLength**2:
-                print("too far away")
+                print("too far away\n")
                 break
             if len(outline) > (maxLength / skipSize)*3:
-                print("too many points")
+                print("too many points\n")
                 break
 
+####
+#         p, t, trash = getBestInRegion(pixels, w, h, boxW, i, j, int(2*boxW/3), int(boxW/2), prevP, avg, lowContrast)
+#         i, j = p[:]
+#         t = getBestAngle(getSquare(pixels, boxW, i, j))
+#         
+#         nxtP = getNextPoint(pixels, w, h, boxW, skipSize, i, j, t, veryHighContrast)
+####
         i += skipSize * math.cos(t)
         j += skipSize * math.sin(t)
 
-        nxtP, t, diff = getBestInRegion(pixels, w, h, boxW, i, j, 2, skipSize, prevP, avg, tol)
+        nxtP, t, diff = getBestInRegion(pixels, w, h, boxW, i, j, 2, skipSize, prevP, avg, lowContrast)
         i,j = nxtP
 
         nxtP = tuple([int(x) for x in nxtP])
-
+        i,j = nxtP
+####
+        
         if nxtP == (0,0):
-            print("No valid next point", prevP, len(outline))
+            print("No valid next point", prevP, len(outline),"\n")
+#             outline = []
+            break
+        if nxtP == prevP:
+            print("Next point is same as current point", prevP, len(outline),"\n")
             outline = []
             break
+
+        looping = False
         
-        if nxtP != prevP:
-
-
-            looping = False
-            line = getLineMatrix( prevP, nxtP)
-            for p in line:
-                if footprints[p[0]][p[1]] != 0:
-                    looping = True
-            if looping:
-                # means that nxtP and prevP are on either side of a previously drawn line; means that that section
-                # has been traced before, and so the loop needs to stop.
-                # so backtrack until the examined point is far enough from any other points, and
-                # then re-define the list to cut off everything afterwards - 1.
-                start = 0
-                for start in range(len(outline)-4, -1, -1):
+        line = getLineMatrix( prevP, nxtP)
+        for p in line:
+            if footprints[p[0]][p[1]] != 0:
+                looping = True
+        if looping:
+            # means that nxtP and prevP are on either side of a previously drawn line; means that that section
+            # has been traced before, and so the loop needs to stop.
+            # so backtrack until the examined point is far enough from any other points, and
+            # then re-define the list to cut off everything afterwards - 1.
+            start = 0
+            for start in range(len(outline)-4, -1, -1):
 #                     print(start, sqrDist(outline[start], outline[len(outline)-1]), cutOffSqrDist / 5)
-                    if sqrDist(outline[start], outline[len(outline)-1]) < cutOffSqrDist / 5:
-                        break
-                outline = outline[start:]
-                
-                print("Went into loop")
-                break
-                
-            if ((i - boxW/2 < 0)
-                |(j - boxW/2 < 0)
-                |(i + boxW/2 > w)
-                |(j + boxW/2 > h)):
-                
-                print("Went off-screen")
-                break
+                if sqrDist(outline[start], outline[len(outline)-1]) < cutOffSqrDist / 5:
+                    break
+            outline = outline[start:]
             
-            outline.append(nxtP)
-            for p in line: # this marks footprints both at and between each point
-                footprints[p[0]][p[1]] = len(outline)
-            prevP = nxtP
-
+            print("Went into loop\n")
+            break
+            
+        if ((i - boxW/2 < 0)
+            |(j - boxW/2 < 0)
+            |(i + boxW/2 > w)
+            |(j + boxW/2 > h)):
+            
+            print("Went off-screen\n")
+            break
+        
+        outline.append(nxtP)
+        for p in line: # this marks footprints both at and between each point
+            footprints[p[0]][p[1]] = len(outline)
+        prevP = nxtP
+        
+        '''
+        add angle keeper-tracker to prevent tracing a void
+        '''
+        
     return outline
 
 #this returns an angle measured from the x-axis. White is pi below this angle, black is pi above.
@@ -283,25 +412,50 @@ def checkPoint( square ):
     return theta, diff
 
 
-# def getBestInRegion( pixels, width, height, boxW, x, y, searchSize, skipSize, prevP, prevT, avg, tol, tempCount=0 ):
-@profile
+# @profile
 def getBestInRegion( pixels, width, height, boxW, x, y, searchSize, skipSize, prevP, avg, tol ):
     bestDiff = [0,0,0]
     bestT = 0
     bestP = (0,0)
     r = searchSize # x pixels away from the starting pixels, inclusive
+    count = 0
     skipSizeSqrd = skipSize**2
-    for j in range(-r, r+1, 1 + int(r/3)):
-        for i in range(-r, r+1, 1 + int(r/3)):
+    for j in range(-r, r+1, 1 + int(r/3+0.5)):
+        for i in range(-r, r+1, 1 + int(r/3+0.5)):
+
+# #     if x + (boxW/2 + 1) >= width:
+# #         break
+# #     elif y + (boxW/2 + 1) >= height:
+# #         break
+# #     elif x - (boxW/2 + 1) < 0:
+# #         break
+# #     elif y - (boxW/2 + 1) < 0:
+# #         break
+# #     else:
+#     try:
+#         t = checkPoint(getSquare(pixels, boxW, x, y))[0]
+#     except Exception:
+#         ()
+#     points = 6
+#     semiRange = pi/4
+#     for a in range( -int(points/2), int(points/2) ):
+#             angle = semiRange * 2 / points * a
+#     
+# #     angle = t + pi/2
+# #     for c in range(-3,3):
+# #             i = int(cos(angle) * c)
+# #             j = int(sin(angle) * c)
+#             i = int(cos(angle) * r)
+#             j = int(sin(angle) * r)
             
-            if x + i + 4 >= width:
+            if x + i + (boxW/2 + 1) >= width:
                 break
-            elif y + j + 4 >= height:
+            elif y + j + (boxW/2 + 1) >= height:
                 break
-            elif x + i - 4 < 0:
-                i+= 4
-            elif y + j - 4 < 0:
-                j+= 4
+            elif x + i - (boxW/2 + 1) < 0:
+                i+= (boxW/2 + 1)
+            elif y + j - (boxW/2 + 1) < 0:
+                j+= (boxW/2 + 1)
             else:
                 pointIsGood = False
                 if prevP != 'n':
@@ -384,17 +538,9 @@ def diffVec(v1,v2):
     v = (v1[0]-v2[0], v1[1]-v2[1], v1[2]-v2[2])
     return v
 
-
-def vecMag(v):
-    return sqrt(v[0]**2 + v[1]**2)
-
 def getVecInOutline(i1, i2, outline):
     return (outline[ i1 ][0]-outline[ i2 ][0], outline[ i1 ][1]-outline[ i2 ][1])
 
-def getAngle( v1, v2 ):
-    denom = vecMag(v1)*vecMag(v2)
-    cosAngle = dot(v2,v1)/denom
-    return cosAngle
     
 def isBreakPoint(outline, i):
     
@@ -413,9 +559,9 @@ def isBreakPoint(outline, i):
     i2b = (i+2) % len(outline)
     i3b = (i+3) % len(outline)
 
-    a1 = getAngle(getVecInOutline( i0, i1a, outline), getVecInOutline( i0, i1b, outline))
-    a2 = getAngle(getVecInOutline( i0, i2a, outline), getVecInOutline( i0, i2b, outline))
-    a3 = getAngle(getVecInOutline( i0, i3a, outline), getVecInOutline( i0, i3b, outline))
+    a1 = getCosAngle(getVecInOutline( i0, i1a, outline), getVecInOutline( i0, i1b, outline))
+    a2 = getCosAngle(getVecInOutline( i0, i2a, outline), getVecInOutline( i0, i2b, outline))
+    a3 = getCosAngle(getVecInOutline( i0, i3a, outline), getVecInOutline( i0, i3b, outline))
     
     angle = (a1 + a2 + a3)/3
     
@@ -536,7 +682,7 @@ maybe:
  
 '''
 
-def printOutline( outline, image, col ):
+def drawPerimeter( outline, image, col ):
     draw = ImageDraw.Draw(image)
     
     s = len(outline)
@@ -613,13 +759,36 @@ def getRegionalStats(box):
         stdev[c] = sqrt(stdev[c] / (len(box)*len(box[i])) )
     return stdev, colorCount
 
+def saveData(listOfLists, fileName):
+    with open(fileName, 'w') as file_:
+        for i in range(0, len(listOfLists)):
+            # go through each outline
+            for j in range(0, len(listOfLists[i])):
+                # go through each point
+                if j != 0:
+                    file_.write('|')
+                file_.write(str(listOfLists[i][j]))
+            file_.write('\n')
 
-def standAlone( imName ):
+# l = []
+# l1 = [(0,1),(1,0),(23,0)]
+# l2 = [(2,3),(3,2)]
+# l3 = [(4,5),(5,4)]
+# l.append(l1)
+# l.append(l2)
+# l.append(l3)
+# saveData(l, "mrFile.txt")
+# print(1/0)
+
+def standAlone( imName, minWidth ):
+    
+    # took ~2:52:10 for a 2000x4000 images, when using the 25 box checker, skipping by 2. (so 6 points? or 12?)
 
 #     im = Image.open("Images/rods.jpg")
 #     im = Image.new("RGB", (100, 100), (40,80,160))
 #     im = Image.open("Images/testPict.jpg")
 #     im = Image.open("Images/testPictTiny.jpg")
+#     im = Image.open("Images/testPicFlare.jpg")
 #     im = Image.open("Images/testPict2.jpg")
 #     im = Image.open("Images/test2.jpg")
 #     im = Image.open("SplitTest.bm")
@@ -627,13 +796,17 @@ def standAlone( imName ):
 #     im = Image.open("Images/ellipseBlurred.jpg")
 #     im = Image.open("Images/tinyTest.jpg")
 #     im = Image.open("Images/FiberImages/BOSCH/BOSCH_EGPNylon66_50wt_LGF_2mm_F41_90_W_90_L_3_R(color).jpg")
+#     im = Image.open("Images/FiberImages/44.5_LCF/LCF_EGP_44.5wt__2sec_79Deg_xz-plane_C6_0_W_40_L_50x_~1.5mm_Fixed_R(color).jpg")
+
 #     im.show()
     im = Image.open(imName)
     im2 = im.copy()
     
-    boxW = 7 # width of the square used to find boundaries
-      
-    minWidth = 20
+    boxW = int(minWidth/3) # width of the square used to find boundaries
+    
+    if boxW % 2 == 0:
+        boxW += 1
+    
     maxLength = 40*minWidth
       
     width, height = im.size
@@ -668,16 +841,40 @@ def standAlone( imName ):
     outlineList = []
 
     # center image on dark background
-    background = Image.new('RGB', (width + 2*boxW, height + 2*boxW), fillCol)
+    border = 2*boxW
+
+    background = Image.new('RGB', (width + 2*border, height + 2*border), fillCol)
     bg_w, bg_h = background.size
     offset = (int((bg_w - width) / 2), int((bg_h - height) / 2))
     background.paste(im2, offset)
+    background.save("borderedTinyTest.bmp")
+    
     # re-load these variables
     im2 = background
     im = im2.copy()
     width,height = im2.size
     pixels = im2.load()
 
+#     i,j = 200, 62
+#     i,j = 211, 53
+#     i,j = 226, 68
+
+#     t = getBestAngle(getSquare(pixels, boxW, i, j))
+#     p = getNextPoint(pixels, width, height, boxW, 1.7 * sqrt(2), i, j, t, [ x/3 for x in stdev ])
+#      
+#     im.putpixel((i,j), (255,255,0))
+#     im.putpixel(p, (255,0,0))
+#     im.show()
+#     return
+
+#     outline = getOutline(pixels, width, height, boxW, maxLength, i,j, avg, stdev)
+#     print(len(outline))
+#     
+#     drawOutline(outline, im)
+#     im.putpixel((i,j), (255,255,0))
+#     im.show()
+#     return
+    
     startX = offset[0]
     startY = offset[1]
     
@@ -706,8 +903,8 @@ def standAlone( imName ):
 
                     if absBiggerThan(d, highContrast):
                         
-                        outline = getOutline(pixels, width, height, boxW, maxLength, p[0], p[1], avg, lowContrast)
-                        print("length: ",len(outline))
+                        outline = getOutline(pixels, width, height, boxW, maxLength, p[0], p[1], avg, stdev)
+                        print("length: ",len(outline), "\n")
                         if len(outline) < 10:
                             continue
                         
@@ -723,13 +920,15 @@ def standAlone( imName ):
 #                             drawOutline(outline, im3)
 #                             im3.show()
 
-            print( "{0:.3f}% checked".format( (float((j * (width-boxW) + i) * 100)/((height-boxW) * (width-boxW)))  ) )
+            print( "\r{0:.3f}% checked".format( (float((j * (width-boxW) + i) * 100)/((height-boxW) * (width-boxW)))  ) )
             
-        print( "{0:.3f}% checked".format( (float((j - int(boxW/2)) * 100)/(height-boxW))  ) )
+#         print( "\r{0:.3f}% checked".format( (float((j - int(boxW/2)) * 100)/(height-boxW))  ) )
 
     print("100% checked")
     print("Printing points")
-
+    
+    saveData("file.txt", outlineList)
+    
 #     print(outlineList)
     for i1 in range(0, len(outlineList)):
         for i2 in range(0, len(outlineList[i1])):
@@ -741,7 +940,7 @@ def standAlone( imName ):
     end = len(outlineList)
     ellipseList = []
 
-    print("len(outlineList) = ", len(outlineList))
+    print("len(outlineList) = ", len(outlineList),"\n")
     
     for i2 in range(start, end):
         splitList = outlineList[i2]
@@ -770,7 +969,12 @@ def main():
     d1 = datetime.datetime.now()
     # file = "Images/smallerTest.jpg"
     file = "Images/tinyTest.jpg"
-    im2, out, outlines = standAlone(file)
+    minW = 20
+#     try:
+    im2, out, outlines = standAlone(file, minW)
+#     except TypeError:
+#         print("standAlone died.", )
+#         return
     out.show()
     im2.show()
     # im2.save("output.bmp")

@@ -1,5 +1,6 @@
 from PIL import Image, ImageDraw
 import math
+import sys
 
 # what follows will display a graph of the amount of each type of color in the picture
 def drawData(graph, colorCountList, divs, numPixels, col):
@@ -54,6 +55,7 @@ def getStats( pixels, width, height ):
         for j in range(0, int(256/divs)):
             avg[i] += colorArray[j][i] * j * divs
         avg[i] /= (width * height)
+        
 
     print("average found.")    
     for i in range(0,3):
@@ -61,6 +63,9 @@ def getStats( pixels, width, height ):
             # for each subdivision of color, calculate the stdev in the image
             for k in range(0,colorArray[j][i]):
                 stdev[i] += pow(j * divs - avg[i], 2)
+                
+            sys.stdout.write("Finding stdev: %d%%   \r" % (j*(i+1)/(int(256/divs)*3)) )
+            sys.stdout.flush()
         stdev[i] /= (width*height)
         stdev[i] = math.sqrt( stdev[i] )
 
