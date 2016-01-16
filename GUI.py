@@ -292,7 +292,8 @@ class EllipseCollection:
                 self.minEllW = 10
             finally:
                 e.delete(0, END)
-        setVal = Button(self.optionMenu, text = "Set minimum ellipse width", command = setMinW, anchor = W)
+        setVal = Button(self.optionMenu, text = ("Set minimum ellipse width, currently %",self.minEllW), 
+                        command = setMinW, anchor = W)
         setVal.configure(width = 20, activebackground = "#33B5E5", relief = FLAT)
         setVal.pack()
         
@@ -610,10 +611,15 @@ class EllipseCollection:
                 break
 
         fileName = self.imName[:i] + "_editFile.txt"
-        f = open(fileName, 'w')
+        folderName = "savedEllipseData"
+        os.mkdir( folderName )
+        f = open(os.path.join(folderName, fileName), 'w')
         
-        f.write(self.imName)
-        f.write()
+#         f.write(self.imName)
+        f.write(self.wdth, "\t", self.hght)
+        for i in range(len(self.ellipseList)):
+            f.write(self.ellipseList.a, self.ellipseList.b, self.ellipseList.x0, 
+                    self.ellipseList.y0, self.ellipseList.alpha)
         
 
 def loadData( fileName ):
@@ -621,7 +627,7 @@ def loadData( fileName ):
     
     minW = 20
     
-    return ("Images/tinyTest",".jpg"), 20, [], []
+    return ("Images/tinyTest",".jpg"), 10, [], []
 
 
 
@@ -631,26 +637,39 @@ def loadData( fileName ):
 # list1.append((20, 20, 145, 90, pi/8))
 # list1.append((20, 20, 45, 190, pi/8))
 # list1.append((80, 20, 20, 0, 3*pi/4))
+def main():
+    '''
+    add display of current minW value to the changer thingy
+    '''
+    
+    name, minW, keys, ellipses = loadData("dataFile.txt")
+    # name = "Images/testPictTiny",".jpg"
+    # name = "Images/FiberImages/44.5_LCF/LCF_EGP_44.5wt__2sec_79Deg_xz-plane_C9_0_W_10_L_50x_~1.5mm_Fixed",".jpg"
+    
+    # im = Image.open(name)
+    name = "Images/tinyTest.jpg"
+    name = "Images/ellipse.jpg"
+    j1,j2, ellipses = standAlone(name, minW)
+    # j1.show()
+    # j2.show()
+    # j1.save()
+    # j2.save()
+    # ellipses = []
+    name = ("Images/ellipse",".jpg")
+    im = Image.open(name[0]+name[1])
+    name = name[0] + ".gif"
+    im.save(name)
+    w, h = im.size
+    
+    slctdIndx = -10
+    
+    # os.system('xset r off')
+    gui = EllipseCollection( w, h, ellipses, minW, name, keys )
+    # os.system('xset r on')
 
 
-name, minW, keys, ellipses = loadData("dataFile.txt")
-# name = "Images/testPictTiny",".jpg"
-# name = "Images/FiberImages/44.5_LCF/LCF_EGP_44.5wt__2sec_79Deg_xz-plane_C9_0_W_10_L_50x_~1.5mm_Fixed",".jpg"
+if __name__ == "__main__":
+    
+    main()
 
-# im = Image.open(name)
-j1,j2, ellipses = standAlone("Images/tinyTest.jpg")
-# j1.show()
-# j2.show()
-# j1.save()
-# j2.save()
-# ellipses = []
-im = Image.open(name[0]+name[1])
-name = name[0] + ".gif"
-im.save(name)
-w, h = im.size
 
-slctdIndx = -10
-
-# os.system('xset r off')
-gui = EllipseCollection( w, h, ellipses, minW, name, keys )
-# os.system('xset r on')

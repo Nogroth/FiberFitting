@@ -12,7 +12,7 @@ It's a description of finding skew in an image, by finding long lines which have
     
     Actually it mentions estimating a confidence value in its binary thing by measuring
     both the min and the max in that binary search region, and returning max/min.
-    If max/min ~= 1, then it's not good.
+    If max/min ~= 1, then it's not good. I might be able to use that.
 
 '''
 
@@ -29,6 +29,10 @@ from scipy.constants.constants import foot
 from math import cos, sin, pi, sqrt
 from functools import total_ordering
 import os
+from html.parser import interesting_normal
+import datetime
+from scipy.cluster.vq import ClusterError
+from defer import AlreadyCalledDeferred
 
     
 def withinTol( color1, color2, tol ):
@@ -65,8 +69,8 @@ def getLightnessDiffference( sqr, theta ):
 
     for i1 in range(lBound, hBound):
         for j1 in range(lBound, hBound):
-            if j1 == 0:
-                continue
+#             if j1 == 0:
+#                 continue
             i = i1
             j = j1
             
@@ -206,6 +210,7 @@ def getNetDeltaAngle(outline, index, a, b, includeBounds = 0):
         netAngle += t
     return netAngle
 
+
 # l = [(0,0),(1,1),(2,1),(3,1),(4,0),(3,-1),(1,-1)]
 # l = [(0,0),(1,0),(2,0),(3,0),(4,0),(5,0),(6,0)]
 # print(getNetDeltaAngle(l, 2, 2, 4))
@@ -276,6 +281,7 @@ def getNextPoint(pixels, w, h, boxW, skipSize, i, j, t, veryHighContrast):
     
     
 def getOutline(pixels, w, h, boxW, maxLength, i, j, avg, stdev):
+    print("Tracing outline, starting at", i, j)
     veryHighContrast = [x/3 for x in stdev]
     lowContrast = [x/8 for x in stdev]
     '''
@@ -284,6 +290,7 @@ def getOutline(pixels, w, h, boxW, maxLength, i, j, avg, stdev):
     skipSize = 1.7 * sqrt(2)
     outline = []
     prevP = (i, j)
+    firstP = prevP
     outline.append(prevP)
 
     footprints = numpy.zeros(shape=(w,h))
@@ -292,19 +299,20 @@ def getOutline(pixels, w, h, boxW, maxLength, i, j, avg, stdev):
     t = getBestAngle(sqr)
 #####
     cutOffSqrDist = (3*skipSize)**2
+#     print(firstP,"__")
 
     while True:
         if len(outline) > 15:
             dist = sqrDist(prevP, outline[0])
 
             if dist <= cutOffSqrDist:
-                print("close to start\n")
+                print(firstP, "close to start", len(outline))
                 break
             elif dist > maxLength**2:
-                print("too far away\n")
+                print(firstP, "too far away", len(outline))
                 break
             if len(outline) > (maxLength / skipSize)*3:
-                print("too many points\n")
+                print(firstP, "too many points (", len(outline))
                 break
 
 ####
@@ -316,18 +324,18 @@ def getOutline(pixels, w, h, boxW, maxLength, i, j, avg, stdev):
         j += skipSize * math.sin(t)
  
         nxtP, t, diff = getBestInRegion(pixels, w, h, boxW, i, j, 2, skipSize, prevP, avg, lowContrast)
-        nxtP = tuple([int(x) for x in nxtP])
+        nxtP = (int(nxtP[0]), int(nxtP[1]))
 ####
 
         i,j = nxtP
 
         
         if nxtP == (0,0):
-            print("No valid next point", prevP, len(outline),"\n")
+            print(firstP, "No valid next point", prevP, len(outline))
 #             outline = []
             break
         if nxtP == prevP:
-            print("Next point is same as current point", prevP, len(outline),"\n")
+            print(firstP, "Next point is same as current point", prevP, len(outline))
             outline = []
             break
 
@@ -349,7 +357,7 @@ def getOutline(pixels, w, h, boxW, maxLength, i, j, avg, stdev):
                     break
             outline = outline[start:]
             
-            print("Went into loop\n")
+            print(firstP, "Went into loop", len(outline))
             break
             
         if ((i - boxW/2 < 0)
@@ -357,7 +365,7 @@ def getOutline(pixels, w, h, boxW, maxLength, i, j, avg, stdev):
             |(i + boxW/2 > w)
             |(j + boxW/2 > h)):
             
-            print("Went off-screen\n")
+            print(firstP, "Went off-screen", len(outline))
             break
         
         outline.append(nxtP)
@@ -417,7 +425,6 @@ def checkPoint( square ):
     return theta, diff
 
 
-# @profile
 def getBestInRegion( pixels, width, height, boxW, x, y, searchSize, skipSize, prevP, avg, tol ):
     bestDiff = [0,0,0]
     bestT = 0
@@ -427,7 +434,6 @@ def getBestInRegion( pixels, width, height, boxW, x, y, searchSize, skipSize, pr
     skipSizeSqrd = skipSize**2
     for j in range(-r, r+1, 1 + int(r/3+0.5)):
         for i in range(-r, r+1, 1 + int(r/3+0.5)):
-
 # #     if x + (boxW/2 + 1) >= width:
 # #         break
 # #     elif y + (boxW/2 + 1) >= height:
@@ -485,7 +491,8 @@ def getBestInRegion( pixels, width, height, boxW, x, y, searchSize, skipSize, pr
                     square = getSquare(pixels, boxW, x + i, y + j)
                     
                     theta, diff = checkPoint(square)
-
+                    if prevP == (81, 100):
+                        print(theta, diff, bestDiff, i, j)
                     if absBiggerThan(diff, bestDiff):
                         bestDiff = diff
                         bestT = theta
@@ -583,12 +590,165 @@ def getSlice(outline, i1,i2):
     else:
         return outline[i1:len(outline)] + outline[0:i2]
     
+def getFullOutline(outline):
+    '''
+    THIS IS NOT AN ORDERED LISTING!!!!
+    '''
+    fullOutline = []
+    for i in range(0, len(outline)):
+        x1 = outline[i][0]
+        y1 = outline[i][1]
+        x2 = outline[(i+1) % len(outline)][0] # modulo so that it wraps to the beginning when it considers the last point
+        y2 = outline[(i+1) % len(outline)][1] # in the outline
+        
+        if (x2-x1) != 0:
+            # x is dependent
+            myx = (y2-y1)/(x2-x1)
+            by = y1 - myx*x1
+            fullOutline.append((x1,y1))
+            for x0 in range(min(x1*10, x2*10), max(x1*10, x2*10)):
+                x = x0/10
+    #                 print(x, m*x+b)
+                if (int(x), int(myx*x+by)) != fullOutline[len(fullOutline)-1]:
+                    fullOutline.append((int(x), int(myx*x+by)))
+        if (y2-y1) != 0:
+            # y is dependent
+            mxy = (x2-x1)/(y2-y1)
+            bx = x1 - mxy*y1
+            fullOutline.append((x1,y1))
+            for y0 in range(min(y1*10, y2*10), max(y1*10, y2*10)):
+                y = y0/10
+    #                 print(x, m*x+b)
+                if (int(mxy*y+bx), int(y)) != fullOutline[len(fullOutline)-1]:
+                    fullOutline.append((int(mxy*y+bx), int(y)))
 
-def splitOutline( outline ):
-    '''
-    if a point in a list has too high of a curvature, replace that list (in splitlist) with the preceding part of the list,
-    and add a list containing the remaining points to the end. If either section is too small, don't add it.
-    '''
+    return fullOutline
+
+def getNearbyAvg(matrix, p, r):
+    if r != int(r):
+        raise Exception("input r must be an integer")
+    x0, y0 = p[:]
+    w = 2*r + 1
+#     sqr = np.array([[0]*w]*w)
+    sum1 = 0
+    for x in range(0, w):
+        for y in range(0, w):
+#             sqr[x][y] = matrix[x0-r+x][y0-r+y]
+            sum1 += matrix[x0-r+x][y0-r+y]
+    sum1 /= w**2
+    return sum1
+
+# cur = (0,0)
+# nxt = (5,2)
+# nxtnxt = (10, 6)
+# v1 = getVector(cur, nxt)
+# v2 = getVector(nxt, nxtnxt)
+# # print(getTheta(v1))
+# print(getTheta(v1), getTheta(v2), getTheta(v2) - getTheta(v1))#, cos(getTheta(v2) - getTheta(v1)), dot(v1,v2)/(1*sqrt(2)))
+# print(1/0)
+
+def getClusters(data, eps):
+    clusters = []
+    for p1 in data:
+        skip = False
+        for c in clusters:
+            if c.__contains__(p1):
+                skip = True
+                break
+        if skip:
+            continue
+        c = []
+        c.append(p1)
+        for p2 in c:
+            nearby = regionQuery(data, p2, eps)
+            for p3 in nearby:
+                if not c.__contains__(p3):
+                    c.append(p3)
+        clusters.append(c)
+    return clusters
+        
+# 
+# #clustering algorithm from 
+# def DBSCAN(Data, eps):
+#     Clusters = []
+#     for i1 in range(0, len(Data)):
+#         if Data[i1] == 0:
+#             continue
+#         P = Data[i1]
+#         Data[i1] = 0
+#         NeighborPts = regionQuery(Data, P, eps)
+#         print(i1, P, NeighborPts)
+#         Clusters.append([])
+#         Clusters[len(Clusters)-1].append(P)
+#         i2 = -1
+#         while i2 < len(NeighborPts)-1:
+#             i2+=1
+#             p0 = NeighborPts[i2]
+#             if p0 != 0:
+#                 near = regionQuery(Data, p0, eps)
+#                 if not near.__contains__(p0):
+#                     NeighborPts.append(p0)
+#             else:
+#                 continue
+#             
+#             
+#             alreadyAdded = False
+#             for c in Clusters:
+#                 for p1 in c:
+#                     if P0 == p1:
+#                         alreadyAdded = True
+#                         break
+#                 if alreadyAdded:
+#                     break
+#                 
+#             if not alreadyAdded:
+#                 Clusters[len(Clusters)-1].append(P0)
+#     return Clusters
+ 
+def regionQuery(Data, P, eps):
+    nearby = []
+    epsSqr = eps**2
+    for p0 in Data:
+        if (p0 != 0) and (P != p0) and (sqrDist(p0, P) < epsSqr):
+            nearby.append(p0)
+    return nearby
+
+
+# im = Image.new("RGB", (200,200), (0,0,0))
+# l = []
+# l.append((25,25))
+# l.append((27,27))
+# l.append((35,23))
+# l.append((42,30))
+# 
+# l.append((50,100))
+# l.append((60,100))
+# l.append((70,100))
+# l.append((80,100))
+# 
+# l.append((125,190))
+# 
+# l.append((185,50))
+# l.append((175,55))
+# l.append((185,55))
+# l.append((185,65))
+# l.append((175,50))
+# l.append((185,45))
+# for p in l:
+#     im.putpixel(p, (255,255,255))
+# im.show()
+# # clusters = DBSCAN(l, 20)
+# clusters = tryAgain(l, 20)
+# print(len(clusters))
+# for i in range(0, len(clusters)):
+#     for p in clusters[i]:
+#         col = int(i/len(clusters)*100)
+#         im.putpixel(p, (col+155*((i+2)%3),col+155*((i+1)%3),col+155*(i%3))) #(255-col)*(i%3)
+# im.show()
+# print(1/0)
+
+def splitOutline(im, outline, outputIm1 = 0,  outputIm2 = 0 ):
+    print("Entered splitOutline")
 #     outline = [
 #                (14,5),
 #                (10,8),
@@ -613,43 +773,383 @@ def splitOutline( outline ):
     
     splitList = []
 
-    splitList.append(outline)
-    return splitList
+#     splitList.append(outline)
+#     return splitList
+    
+#     # initial idea, works kinda but not well enough
+#     '''
+#     if a point in a list has too high of a curvature, replace that list (in splitlist) with the preceding part of the list,
+#     and add a list containing the remaining points to the end. If either section is too small, don't add it.
+#     '''
+#     start = -1
+#     for i1 in range(0, len(outline)):
+#         if isBreakPoint(outline, i1):
+#             start = i1
+#             break
+#     if start == -1:
+#         splitList.append(outline)
+#         return splitList
+#     
+#     bP = [] #break points
+#     print("Start:",start)
+#     for i2 in range(0, len(outline)):
+#         if isBreakPoint(outline, (i2 + start)%len(outline)):
+#             bP.append((i2 + start)%len(outline))
+#             
+#     print("BP: ", bP)
+#     
+#     for i3 in range(0, len(bP)):
+#         if abs(bP[i3]+1 - bP[(i3-1)%len(bP)]) > 0:
+# #             splitList.append(outline[bP[i-1]:bP[i]])
+#             splitList.append(getSlice(outline, bP[(i3-1)%len(bP)], bP[i3]+1))
+#     print("SplitList:", splitList)
+# #     im = Image.new('RGB',(500,600), (0,0,0))
+# #     
+# #     for i in range(0, len(splitList)):
+# #         for j in range(0, len(splitList[i])):
+# #             p = (splitList[i][j][0],splitList[i][j][1])
+# #             c = int(i/len(splitList) * 255)
+# #             c = i%2 * 255
+# #             col = (c,0,255-c)
+# #             im.putpixel(p, col)
+# #     im.show()
 
-    start = -1
+    # new attempt, using watershed
+    
+    im0 = im.copy()
+    im1 = im.copy()
+    pixels0 = im0.load()
+    w,h = im.size
+    
+    if outputIm1 == 0:
+        outputIm1 = Image.new("RGB", (w, h), (0,0,0))
+    if outputIm2 == 0:
+        outputIm2 = Image.new("RGB", (w, h), (0,0,0))
+    
+    out1Pixels = outputIm1.load()
+        
+    tracedOutline = getFullOutline(outline)
+    
+    for i1 in range(0, len(tracedOutline)):
+        im0.putpixel(tracedOutline[i1], (255,0,0))
     for i1 in range(0, len(outline)):
-        if isBreakPoint(outline, i1):
-            start = i1
-            break
-    if start == -1:
+        im1.putpixel(outline[i1], (255,0,0))
+    
+    interiorPoint = 'bad point'
+    
+    pointsIncludingCenter = []
+    xMin = w
+    xMax = 0
+    yMin = h
+    yMax = 0
+    for i1 in range(0, len(outline)):
+        if outline[i1][0] < xMin:
+            xMin = outline[i1][0]
+        elif outline[i1][0] > xMax:
+            xMax = outline[i1][0]
+        if outline[i1][1] < yMin:
+            yMin = outline[i1][1]
+        elif outline[i1][1] > yMax:
+            yMax = outline[i1][1]
+    
+    lBnd = xMin - int((xMax-xMin)/2)
+    rBnd = xMax + int((xMax-xMin)/2)
+    upBnd = yMax + int((yMax-yMin)/2) # up in the coordinate system, down on the screen
+    dwBnd = yMin - int((yMax-yMin)/2)
+    print("Bounds: ", rBnd, lBnd, upBnd, dwBnd)
+    if lBnd < 0:
+        shift = -lBnd
+        lBnd = 0
+        rBnd += shift
+    elif rBnd > w-1:
+        shift = rBnd - (w-1)
+        rBnd = w-1
+        lBnd -= shift
+    if dwBnd < 0:
+        shift = -dwBnd
+        dwBnd = 0
+        upBnd += shift
+    elif upBnd > h-1:
+        shift = upBnd - (h-1)
+        upBnd = h - 1
+        dwBnd -= shift
+    
+    if ((lBnd < 0) or (rBnd >= w) or (dwBnd < 0) or (upBnd >= h)):
+        print("Found an outline running entire length of image. Can't split it.")
+        return []
+    
+#     pointsIncludingCenter.append((lBnd + 2, dwBnd+2))
+    pointsIncludingCenter.append((int((xMax+xMin)/2), int((yMax+yMin)/2)))
+    i = 0
+    try:
+        print("initial point: ", pointsIncludingCenter[i])
+        while i < len(pointsIncludingCenter):
+            outputIm1.putpixel(pointsIncludingCenter[i], (0,255,255))
+            right = (pointsIncludingCenter[i][0] + 1, pointsIncludingCenter[i][1])
+            left = (pointsIncludingCenter[i][0] - 1, pointsIncludingCenter[i][1])
+            up = (pointsIncludingCenter[i][0], pointsIncludingCenter[i][1] + 1)
+            down = (pointsIncludingCenter[i][0], pointsIncludingCenter[i][1] - 1)
+#             print(pointsIncludingCenter[i], "|", right, rBnd, (right[0] < rBnd),"|", left, lBnd, (left[0] > lBnd),"|", up, upBnd, (up[0] < upBnd),"|", down, dwBnd, (down[0] > dwBnd))
+            
+            if (right[0] < rBnd) and (pixels0[right] != (255,0,0)):
+                pointsIncludingCenter.append(right)
+                im0.putpixel(right, (255,0,0))
+                
+            if (left[0] > lBnd) and (pixels0[left] != (255,0,0)):
+                pointsIncludingCenter.append(left)
+                im0.putpixel(left, (255,0,0))
+                
+            if (up[1] < upBnd) and (pixels0[up] != (255,0,0)):
+                pointsIncludingCenter.append(up)
+                im0.putpixel(up, (255,0,0))
+                
+            if (down[1] > dwBnd) and (pixels0[down] != (255,0,0)):
+                pointsIncludingCenter.append(down)
+                im0.putpixel(down, (255,0,0))
+            i += 1
+    except Exception:
+        im0.show()
+        raise
+    
+    shape = []
+    
+    areaSquareEnclosingOutline = (xMax-xMin)*2 * (yMax-yMin)*2
+#     if outline[0] == (77, 25):
+#         print(areaSquareEnclosingOutline, i)
+#         im0.show()
+#         im1.show()
+#     print("area = ", i, "max = ", areaSquareEnclosingOutline, areaSquareEnclosingOutline/4)
+    if i < areaSquareEnclosingOutline/4:
+        shape = pointsIncludingCenter
+        interiorPoint = (int((xMax+xMin)/2), int((yMax+yMin)/2))
+    else:
+        for i1 in range(0, len(outline)):
+            # for a sequence of three points which are convex, which I can use to get an internal point.
+            cur = outline[i1]
+            nxt = outline[(i1 + 1) % len(outline)]
+            nxtnxt = outline[(i1 + 2) % len(outline)]
+#             v1 = getVector(cur, nxt)
+#             v2 = getVector(nxt, nxtnxt)
+            avg = ( (cur[0] + nxt[0] + nxtnxt[0])/3, (cur[1] + nxt[1] + nxtnxt[1])/3 )
+            if pixels0[avg] != (255,0,0):
+                interiorPoint = ( int((cur[0]+nxtnxt[0])/2), int((cur[1]+nxtnxt[1])/2) )
+#                 im1.putpixel(cur, (0,0,255))
+#                 im1.putpixel(nxt, (0,128,255))
+#                 im1.putpixel(nxtnxt, (0,255,255))
+                print("insidePoint:",cur,nxt,nxtnxt,interiorPoint)
+                shape.append(interiorPoint)
+                i = 0
+                
+                try:
+                    while i < len(shape):
+                        outputIm1.putpixel(shape[i], (0,255,255))
+                        right = (shape[i][0] + 1, shape[i][1])
+                        if pixels0[right] != (255,0,0):
+                            shape.append(right)
+                            im0.putpixel(right, (255,0,0))
+                            
+                        left = (shape[i][0] - 1, shape[i][1])
+                        if pixels0[left] != (255,0,0):
+                            shape.append(left)
+                            im0.putpixel(left, (255,0,0))
+                            
+                        up = (shape[i][0], shape[i][1] - 1)
+                        if pixels0[up] != (255,0,0):
+                            shape.append(up)
+                            im0.putpixel(up, (255,0,0))
+                            
+                        down = (shape[i][0], shape[i][1] + 1)
+                        if pixels0[down] != (255,0,0):
+                            shape.append(down)
+                            im0.putpixel(down, (255,0,0))
+                            
+                        i += 1
+                        
+                except Exception:
+#                     shape = []
+#                     im0 = im.copy()
+#                     im1 = im.copy()
+#                     pixels0 = im0.load()
+#                     for i1 in range(0, len(tracedOutline)):
+#                         im0.putpixel(tracedOutline[i1], (255,0,0))
+#                     for i1 in range(0, len(outline)):
+#                         im1.putpixel(outline[i1], (255,0,0))
+#                     continue
+                    return splitList
+                    outputIm1.show()
+                    im0.show()
+#                     im0.save("crap.bmp")
+                    im1.show()
+                    print("\n\nIn shape flood-fill exception", i, shape[i])
+                    splitList.append(outline)
+                    return 1/0
+#                     raise
+                    return splitList
+                break
+                
+#                 if nxt[0] == cur[0] or nxtnxt[0] == nxt[0]:
+#                     continue
+#                 slope1 = (nxt[1]-cur[1])/(nxt[0]-cur[0])
+#                 slope2 = (nxtnxt[1]-nxt[1])/(nxtnxt[0]-nxt[0])
+#                 if (slope1*slope2 > 0) and (slope1 > slope2):
+#                     if sqrDist(cur, nxtnxt) < 8:
+#                         continue
+#                     
+    
+    if interiorPoint == 'bad point':
+        return splitList
+#     im0.show()
+#     im0.save("borderedThingy.bmp")
+    
+    
+    #populate distance matrix
+    distMatrix = array([[0]*h]*w)
+    for p in shape:
+        minSqrdDist = w*w
+        for o in tracedOutline:
+            dist = sqrDist(p, o)
+            if dist < minSqrdDist:
+                minSqrdDist = dist
+        distMatrix[p[0]][p[1]] = minSqrdDist
+    
+    if False != True:
+#         im2 = Image.new("RGB", (w,h), (0,0,0))
+        maxDist = 0
+        maxDist = 0
+        minDist = w*w
+        for x in range(0, w):
+            for y in range(0, h):
+                if distMatrix[x][y] > maxDist:
+                    maxDist = distMatrix[x][y]
+                elif distMatrix[x][y] < minDist:
+                    minDist = distMatrix[x][y]
+        
+        scale = 255/(maxDist - minDist)
+
+        for x in range(0, w):
+            for y in range(0, h):
+                c = int(scale * distMatrix[x][y])
+                c1 = out1Pixels[(x,y)][0]
+                if c > c1:
+                    outputIm1.putpixel((x,y), (c,c,c))
+                
+#         outputIm2.show()
+#         outputIm2.save("pretty.bmp")
+    
+    # find minima
+    allMinima = []
+    sqrW = 12
+    
+    print("Finding minima")
+    for i in range(0, len(shape), 10*sqrW):
+        bestP = shape[i]
+        
+        for cutoff in range(0, int(sqrt(len(shape)))):
+            currentP = bestP
+#             minimaPathTrace.putpixel(currentP, (255,0,0))
+            
+            best = getNearbyAvg(distMatrix, currentP, int(sqrW/2))
+            for i1 in range(-1,2):
+                for i2 in range(-1,2):
+                    if i1 == 0 and i2 == 0:
+                        continue
+                    avg = getNearbyAvg(distMatrix, (bestP[0] + i1*sqrW, bestP[1] + i2*sqrW), int(sqrW/2))
+                    if avg > best:
+                        bestP = (bestP[0] + i1*sqrW, bestP[1] + i2*sqrW)
+                        best = avg
+            if bestP == currentP:
+                break
+        
+#         dontAdd = False
+#         for m in minima:
+#             if sqrDist(bestP, m) < 2*sqrW:
+#                 dontAdd = True
+#                 break
+#         if not dontAdd:
+        allMinima.append(bestP)
+        
+#             minimaPathTrace.putpixel(currentP, (0,0,255))
+#     minimaPathTrace.show()
+#     outputIm1.show()
+    
+    # now clustering algorithm, to average together all points which are within some small distance of each other.
+    # Groups a, b, and c if aRb and bRc, even if not aRc.
+    clusters = getClusters(allMinima, 20)
+    minima = []
+    for c in clusters:
+        totX = 0
+        totY = 0
+        for p in c:
+            totX += p[0]
+            totY += p[1]
+        minima.append((int(totX/len(c)),int(totY/len(c))))
+#     minima = allMinima
+    for m in allMinima:
+        try:
+            outputIm1.putpixel(m, (255,255,0))
+        except Exception:
+            ()
+    for m in minima:
+        try:
+            outputIm1.putpixel(m, (255,0,0))
+        except Exception:
+            ()
+        
+    
+    breakPoints = []
+    print("minima", minima)
+    if len(minima) > 2:
+        for i4 in range(0, len(tracedOutline)):
+            p = tracedOutline[i4]
+            # find the closest two minima
+            min1 = (0,0)
+            min1Dist = w*w
+            min2 = (0,0)
+            min2Dist = w*w
+            for m in minima:
+                dist = sqrDist(p, m)
+                if dist < min2Dist:
+                    if dist < min1Dist:
+                        min2Dist = min1Dist
+                        min2 = min1
+                        min1Dist = dist
+                        min1 = m
+                    else:
+                        min2Dist = dist
+                        min2 = m
+    #         print(p, abs(sqrDist(p, min1) - sqrDist(p, min2)))
+            if abs(sqrDist(p, min1) - sqrDist(p, min2)) < 60:
+#                 print(p, "###############################")
+                # p is a breakpoint, find nearest points in outline
+                for i in range(0, len(outline)):
+                    # if p is between (in both x and y directions) the current point and the next one
+                    prv = outline[i]
+                    nxt = outline[(i+1)%len(outline)]
+                    if (    p[0] >= min(prv[0], nxt[0]) 
+                        and p[0] <= max(prv[0], nxt[0])
+                        and p[1] >= min(prv[1], nxt[1]) 
+                        and p[1] <= max(prv[1], nxt[1])):
+                        isContained = False
+                        for i1 in range(0, len(breakPoints)):
+                            if abs(breakPoints[i1] - i) < 10:
+                                isContained = True
+                                break
+                        if not isContained:
+                            breakPoints.append(i)
+#     print("___________________________________",breakPoints)
+                
+    if len(breakPoints) == 0:
         splitList.append(outline)
         return splitList
     
-    bP = [] #break points
-    print("Start:",start)
-    for i2 in range(0, len(outline)):
-        if isBreakPoint(outline, (i2 + start)%len(outline)):
-            bP.append((i2 + start)%len(outline))
-            
-    print("BP: ", bP)
-    
-    for i3 in range(0, len(bP)):
-        if abs(bP[i3]+1 - bP[(i3-1)%len(bP)]) > 0:
+    for i1 in range(0, len(breakPoints)):
+        if abs(breakPoints[i1]+1 - breakPoints[(i1-1)%len(breakPoints)]) > 0:
 #             splitList.append(outline[bP[i-1]:bP[i]])
-            splitList.append(getSlice(outline, bP[(i3-1)%len(bP)], bP[i3]+1))
-    print("SplitList:", splitList)
-#     im = Image.new('RGB',(500,600), (0,0,0))
-#     
-#     for i in range(0, len(splitList)):
-#         for j in range(0, len(splitList[i])):
-#             p = (splitList[i][j][0],splitList[i][j][1])
-#             c = int(i/len(splitList) * 255)
-#             c = i%2 * 255
-#             col = (c,0,255-c)
-#             im.putpixel(p, col)
-#     im.show()
-
-    print("SplitList", len(splitList), len(splitList[int(len(splitList)/2)]))
+            splitList.append(getSlice(outline, breakPoints[(i1-1)%len(breakPoints)], breakPoints[i1]+1))
+#     if outputIm2 != 0:
+#         for i2 in range(0, len(splitList)):
+#             drawPerimeter(splitList[i2], outputIm2, (0,255,0))
+    #     outputIm2.show()
     return splitList
 
 def ellipsesAreSame(e1, e2):
@@ -658,6 +1158,9 @@ def ellipsesAreSame(e1, e2):
     return False
 
 def avgEll( e1, e2 ):
+    return 0
+# fix this, what if t1 = 1 and t2 = 179?
+# or if a and b are swapped?
     a = (e2[0] + e1[0])/2
     b = (e2[1] + e1[1])/2
     h = (e2[2] + e1[2])/2
@@ -677,15 +1180,6 @@ def sqrOk( square, avg, tol ):
         return absBiggerThan( diffVec(square[0][len(square)-1], square[len(square)-1][0]), tol)
     return True
 
-'''
-
-maybe:
-
- TODO
- approximate curvature of last x points, for splitting, and compare those two generated ellipses to each other
- ?measure closeness of ellipse - matrixy stuff?
- 
-'''
 
 def drawPerimeter( outline, image, col ):
     draw = ImageDraw.Draw(image)
@@ -735,7 +1229,7 @@ def solve(data, minW):
             b = temp
         return a,b,h,k,t
     except Exception:
-        print("died", Exception.args)
+        print("\nDied", Exception.args)
         return [0,0,0,0,0]
 
 def getRect(pixels, x, y, w, h):
@@ -829,19 +1323,19 @@ def loadData(fileName):
 # print(1/0)
 
 def standAlone( imPath, minWidth ):
+    d1 = datetime.datetime.now()
     
-    # took ~2:52:10 for a 2000x4000 images, when using the 25 box checker, skipping by 2. (so 6 points? or 12?)
+    # took ~2:52:10 for a 2000x4000 image, when using the 25 box checker, skipping by 2. (so 6 points? or 12?)
 
 #     imPath = "Images/rods.jpg"
 #     imPath = "Images/testPict.jpg"
-    imPath = "Images/testPictTiny.jpg"
+#     imPath = "Images/testPictTiny.jpg"
 #     imPath = "Images/testPicFlare.jpg"
 #     imPath = "Images/testPict2.jpg"
 #     imPath = "Images/test2.jpg"
 #     imPath = "SplitTest.bm"
 #     imPath = "Images/ellipse.jpg"
 #     imPath = "Images/ellipseBlurred.jpg"
-#     imPath = "Images/tinyTest.jpg"
 #     imPath = "Images/FiberImages/BOSCH/BOSCH_EGPNylon66_50wt_LGF_2mm_F41_90_W_90_L_3_R(color).jpg"
 #     imPath = "Images/FiberImages/44.5_LCF/LCF_EGP_44.5wt__2sec_79Deg_xz-plane_C6_0_W_40_L_50x_~1.5mm_Fixed_R(color).jpg"
 #     imPath = "TestCases/full/ltBlue1.jpg"
@@ -854,18 +1348,19 @@ def standAlone( imPath, minWidth ):
 #     return
     im2 = im.copy()
     
-    boxW = int(minWidth/3) # width of the square used to find boundaries
-    
-    if boxW % 2 == 0:
-        boxW += 1
-    
-    maxLength = 40*minWidth
-      
     width, height = im.size
     out = Image.new("RGB", (width, height), (0,0,0))
     pixels = im.load()
     
     print("Image loaded.")
+    
+    boxW = int(minWidth/3) # width of the square used to find boundaries # worked(ish) at boxW = 40/3 = 13
+    boxW = 13
+    if boxW % 2 == 0:
+        boxW += 1
+#     maxLength = 40*minWidth
+    maxLength = width if (width > height) else height
+
     
     print("Getting statistics...")
     stdev, avg = getStats(pixels, width, height)
@@ -877,7 +1372,7 @@ def standAlone( imPath, minWidth ):
     
     fillCol = avg
     for i in range(0, len(fillCol)):
-        fillCol[i] = int(fillCol[i] - 3*stdev[i]/4)
+        fillCol[i] = int(fillCol[i] - 4*stdev[i]/7)
     fillCol = tuple(fillCol)
     
     print("avg = ", avg)
@@ -900,12 +1395,17 @@ def standAlone( imPath, minWidth ):
     offset = (int((bg_w - width) / 2), int((bg_h - height) / 2))
     background.paste(im2, offset)
     background.save("bordered"+imName[:len(imName)-3]+"bmp")
-    
+#     background.show()
+#     return
     # re-load these variables
     im2 = background
     im = im2.copy()
+    original = im2.copy()
     width,height = im2.size
     pixels = im2.load()
+    
+    outputIm1 = Image.new("RGB", (width, height), (0,0,0))
+#     outputIm2 = Image.new("RGB", (width, height), (0,0,0))
     
     
 #     im.show()
@@ -934,6 +1434,8 @@ def standAlone( imPath, minWidth ):
      
     startX = offset[0]
     startY = offset[1]
+#     startX = 74
+#     startY = 26
      
     for j in range(startY, height - offset[1], skipSize):
  
@@ -947,7 +1449,7 @@ def standAlone( imPath, minWidth ):
             #took about 5.5 mins, most of which felt like the continuous loops
              
             square = getSquare(pixels, boxW, i, j)
- 
+#             print('\nBegininng of standAlone loop',i,j)
             #first examine the square to see if it's worth calculating
             if sqrOk(square, avg, midContrast):
                  
@@ -955,50 +1457,82 @@ def standAlone( imPath, minWidth ):
                 diff = checkPoint(square)[1]
  
                 if absBiggerThan(diff, midContrast):
- 
+#                     print('Right before getBestInRegion',i,j)
                     p,t,d = getBestInRegion(pixels, width, height, boxW, i, j, int(skipSize/2), skipSize, 'n', avg, lowContrast)
+#                     print('\tRight after getBestInRegion',p)
  
                     if absBiggerThan(d, highContrast):
+#                         print('Right before getOutline',p)
                         outline = getOutline(pixels, width, height, boxW, maxLength, p[0], p[1], avg, stdev)
-                        print("length: ",len(outline), "\n")
-                        if len(outline) < 10 or getNetDeltaAngle(outline, 0, 0, len(outline)) > 0:
+#                         print('t',i,j)
+#                         drawOutline(outline, im)
+#                         im.show()
+#                         return
+                        if len(outline) < 7 or getNetDeltaAngle(outline, 0, 0, len(outline)) > 0:
                             continue
-                         
+                        
+#                         if outline[0] != (77, 25):
+#                             continue
+                        
                         # split the outline here, before you fill it in.
-                        splitOutlines = splitOutline( outline )
- 
-                        outlineList.append(splitOutlines)
+#                         splitOutlines = splitOutline( im, outline, outputIm1, outputIm2 )
+                        splitOutlines = splitOutline( im, outline, outputIm1 )
+                        
+                        print("First point in splitOutline: ", outline[0])
+                        print("len: ", len(splitOutlines))
+#                         fillOutline(outline, im, fillCol)
+#                         drawOutline(outline, im)
+#                         im.show()
+#                         im3 = im.copy()
+#                         drawOutline(outline, im3)
+#                         im3.show()
+#                         return
+                        
                         if len(outlineList) > 0:
                             fillOutline(outline, im2, fillCol)
-#                             fillOutline(outline, im, fillCol)
-#                             drawOutline(outline, im)
-#                             im3 = im.copy()
-#                             drawOutline(outline, im3)
-#                             im3.show()
+                        if splitOutlines == []:
+                            continue
+#                         splitOutlines = splitOutline( im, outline )
+                        outlineList.append(splitOutlines)
+                        print("SplitOutline Appended.\n")
+                        
+                        fillOutline(outline, im, fillCol)
+                        drawOutline(outline, im)
+#                         im3 = im.copy()
+#                         drawOutline(outline, im3)
+#                         im3.show()
+#                         im.show()
+#                         return
  
-            print( "\r{0:.3f}% checked".format( (float((j * (width-boxW) + i) * 100)/((height-boxW) * (width-boxW)))  ) )
+#             print( "\r{0:.3f}% checked".format( (float((j * (width-boxW) + i) * 100)/((height-boxW) * (width-boxW)))  ) )
              
 #         print( "\r{0:.3f}% checked".format( (float((j - int(boxW/2)) * 100)/(height-boxW))  ) )
  
     print("100% checked")
     print("Printing points")
+    outputIm1.show()
+#     outputIm1.save("largerOutput.bmp")
+#     outputIm2.show()
+#     outputIm2.save("largerOutput.bmp")
      
 #     saveData(outlineList,"file.txt")
     
+#     im.show()
+    print("Time to trace and split: ", datetime.datetime.now() - d1)
     
 ##################
 
 #     outlineList = loadData("file.txt")
     
 
-    for i1 in range(0, len(outlineList)):
-        for i2 in range(0, len(outlineList[i1])):
-            if len(outlineList[i1][i2]) > 4:
-                drawOutline(outlineList[i1][i2], im)
-                length = len(outlineList[i1][i2])
-                dist = 1
-                for i3 in range(0, length, 1):
-                    t = getNetDeltaAngle(outlineList[i1][i2], i3, dist, dist, 1)
+#     for i1 in range(0, len(outlineList)):
+#         for i2 in range(0, len(outlineList[i1])):
+#             if len(outlineList[i1][i2]) > 4:
+#                 drawOutline(outlineList[i1][i2], im)
+#                 length = len(outlineList[i1][i2])
+#                 dist = 1
+#                 for i3 in range(0, length, 1):
+#                     t = getNetDeltaAngle(outlineList[i1][i2], i3, dist, dist, 1)
 #                     if abs(t) > 0.5*pi:
 #                         print(t, outlineList[i1][i2][i3], "    ****")
 #                         im.putpixel(outlineList[i1][i2][(i3+1)%length], (0,0,255))
@@ -1020,7 +1554,6 @@ def standAlone( imPath, minWidth ):
 #     im.save("outlined"+imName[:len(imName)-3]+"bmp")
     
 #     return
-
     start = 0
     end = len(outlineList)
     ellipseList = []
@@ -1030,44 +1563,74 @@ def standAlone( imPath, minWidth ):
     for i2 in range(start, end):
         splitList = outlineList[i2]
 #         possEll = []
+#         print("Checking item", i2, "out of", len(outlineList)) #not really checking that number; remember that it's
+                                                                #checking that collection of lists
         for i3 in range(0, len(splitList)):
             list1 = splitList[i3]
 #             print(i3, len(list1))
             a, b, h, k, t = solve(list1, minWidth/2)
             a = abs(a)
             b = abs(b)
+#             print(a,b,h,k,t)
+#             print((a, width), (2*b, minWidth), (width, height))
+#             imTemp = original.copy()
+#             imTemp2 = original.copy()
+#             drawOutline(list1, imTemp)
+#             drawOutline(list1, imTemp2)
+#             fillEllipse(imTemp2, h, k, t, a, b, (255,255,255))
+#             imTemp.show()
+#             imTemp2.show()
+#             input("")
+            
 #             print(i3, len(list1), a )
-            if a > width/2 or h < 0 or k < 0 or h > width or k > height or a==0:
+            if (a > width) or (2*b < minWidth) or (h <= 0) or (k < 0) or (h > width) or (k > height):
                 continue
             h -= offset[0]
             k -= offset[1]
             fillEllipse(out, h, k, t, a, b, (255,255,255))
-            print("save",len(ellipseList), a, b, h, k, t)
+            adjustedList = [ (p[0]-offset[0], p[1]-offset[1]) for p in list1 ]
+            try:
+                drawOutline(adjustedList, out)
+            except Exception:
+                ()
+            print("saving ellipse #", len(ellipseList), a, b, h, k, t)
             ellipseList.append((h, k, t, a, b))
 
+    print("Time to find best fits: ", datetime.datetime.now() - d1)
     return im, out, ellipseList
 
 
 
 def main():
-    import datetime
     d1 = datetime.datetime.now()
     # file = "Images/smallerTest.jpg"
+#     file = "Images/testPict2.jpg"
     file = "Images/tinyTest.jpg"
-    minW = 20
-#     try:
-    im2, out, outlines = standAlone(file, minW)
-#     except TypeError:
-#         print("standAlone died.", )
-#         return
+#     file = "Images/ellipse.jpg"
+#     file = "TestCases/watershedTest2.bmp"
+    minW = 15
+    try:
+        im2, out, outlines = standAlone(file, minW)
+    except TypeError:
+        raise
+        print("standAlone died.", )
+        
+        d2 = datetime.datetime.now()
+        diff = d2-d1
+        print(diff)
+        return
+    
     out.show()
     im2.show()
     # im2.save("output.bmp")
     # out.save("output2.bmp")
+    
     d2 = datetime.datetime.now()
     diff = d2-d1
     print(diff)
 
 if __name__ == "__main__":
-    main()
+    import cProfile
+    cProfile.run('main()')
+#     main()
     
