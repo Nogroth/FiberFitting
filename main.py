@@ -45,7 +45,7 @@ def withinTol( color1, color2, tol ):
 #takes input of a coordinate (in (x,y) format, relative to the origin) on the regular xy plane
 #gives theta as measured from the x axis. (polar)
 def getTheta(coord):
-    theta = math.atan( float(coord[1]) / (coord[0]+0.000001) )
+    theta = math.atan( float(coord[1]) / (coord[0]+0.00001) )
 #     print(theta)
     if coord[0] < 0:
         theta += math.pi
@@ -69,36 +69,39 @@ def getLightnessDiffference( sqr, theta ):
 
     for i1 in range(lBound, hBound):
         for j1 in range(lBound, hBound):
-#             if j1 == 0:
-#                 continue
+            if j1 == 0:
+                continue
             i = i1
             j = j1
             
             tempTheta = getTheta( (i, j) )
             lThetaBnd = theta
             hThetaBnd = theta + math.pi
-            
-            while (tempTheta < lThetaBnd) & (hThetaBnd > 2* math.pi):
-                hThetaBnd -= 2* math.pi
-                lThetaBnd -= 2* math.pi
+            twoPi = math.pi + math.pi
+            while (tempTheta < lThetaBnd) & (hThetaBnd > twoPi):
+                hThetaBnd -= twoPi
+                lThetaBnd -= twoPi
             while (tempTheta > hThetaBnd) & (lThetaBnd < 0):
-                hThetaBnd += 2* math.pi
-                lThetaBnd += 2* math.pi
+                hThetaBnd += twoPi
+                lThetaBnd += twoPi
                 
             distFromLine = sqrt((i**2 +j**2))*abs(math.tan(tempTheta - hThetaBnd))
+#             distFromLine = ((abs(i)+abs(j))/1.372)*abs(tan(tempTheta - hThetaBnd))
             
             #pretending the pixel is a circle whose radius goes from 0.5 to 1.0 as theta goes from 0 to pi/2
             rPixel = 0.5 + 0.2071*sin(2*theta)
-
+            dPixel = rPixel+rPixel
+            partialPixelArea1 = distFromLine/dPixel + 0.5
+            partialPixelArea2 = 0.5 - distFromLine/dPixel
             if (tempTheta > lThetaBnd) & ( tempTheta < hThetaBnd):
 
                 for k in range(0,3):
                     if abs(distFromLine) < rPixel:
                         
-                        side1[k] += sqr[i1][j1][k] * (distFromLine/(rPixel*2) + 0.5)
-                        s1Count += distFromLine/(rPixel*2) + 0.5
-                        side2[k] += sqr[i1][j1][k] * (0.5 - distFromLine/(rPixel*2))
-                        s2Count += 0.5 - distFromLine/(rPixel*2)
+                        side1[k] += sqr[i1][j1][k] * partialPixelArea1
+                        s1Count += partialPixelArea1
+                        side2[k] += sqr[i1][j1][k] * partialPixelArea2
+                        s2Count += partialPixelArea2
                     else:
                         side1[k] += sqr[i1][j1][k]
                         s1Count += 1
@@ -108,10 +111,10 @@ def getLightnessDiffference( sqr, theta ):
                     if abs(distFromLine) < rPixel:
                         # a little more than half the width of a single pixel 
                         # I'm pretending the pixel's a circle, and r=0.56 gives the circle an equal area to a 1x1 square
-                        side2[k] += sqr[i1][j1][k] * (distFromLine/(rPixel*2) + 0.5)
-                        s2Count += distFromLine/(rPixel*2) + 0.5
-                        side1[k] += sqr[i1][j1][k] * (0.5 - distFromLine/(rPixel*2))
-                        s1Count += 0.5 - distFromLine/(rPixel*2)
+                        side2[k] += sqr[i1][j1][k] * partialPixelArea1
+                        s2Count += partialPixelArea1
+                        side1[k] += sqr[i1][j1][k] * partialPixelArea2
+                        s1Count += partialPixelArea2
                     else:
                         side2[k] += sqr[i1][j1][k]
                         s2Count += 1
@@ -1605,8 +1608,10 @@ def main():
     d1 = datetime.datetime.now()
     # file = "Images/smallerTest.jpg"
 #     file = "Images/testPict2.jpg"
-    file = "Images/tinyTest.jpg"
+#     file = "Images/tinyTest.jpg"
 #     file = "Images/ellipse.jpg"
+    file = "Images/FiberImages/30_LGF/LGF_EGP_30wt__1sec_79Deg_xz-plane_F21_0_W_10_L_20X_R(color).jpg"
+#     file = "TestCases/adjoined/brown12.jpg"
 #     file = "TestCases/watershedTest2.bmp"
     minW = 15
     try:
@@ -1617,7 +1622,7 @@ def main():
         
         d2 = datetime.datetime.now()
         diff = d2-d1
-        print(diff)
+        print("Time elapsed before death:", diff)
         return
     
     out.show()
@@ -1627,7 +1632,7 @@ def main():
     
     d2 = datetime.datetime.now()
     diff = d2-d1
-    print(diff)
+    print("Time elapsed:", diff)
 
 if __name__ == "__main__":
     import cProfile

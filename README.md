@@ -36,7 +36,7 @@ Current shortcomings:
 
 ----It only processes the image located at the path written out in the code, not all the images in the cwd
 
-----The splitting algorithm doesn't work very well, and has been turned off.
+----The splitting algorithm occasionally fails to split apparently well-defined adjoined ellipses, for a currently unknown reason.
 
 ----The code to combine similar ellipses hasn't yet been written.
 
